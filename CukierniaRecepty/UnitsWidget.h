@@ -8,16 +8,21 @@
 #include <Wt/WDialog>
 #include <Wt/WPushButton>
 #include <Wt/WDoubleValidator>
+#include "Unit.h"
+#include "Recipe.h"
+#include "Ingredient.h"
 #include "helpers.h"
 
 class UnitsWidget : public Wt::WContainerWidget {
    public:
-    UnitsWidget(Wt::WContainerWidget* root = nullptr) {
+    UnitsWidget(Wt::WContainerWidget*, Database& db) {
+        this->db = &db;
         addButton = std::make_unique<Wt::WPushButton>(L"Dodaj jednostkę", this);
         addButton->clicked().connect(this, &UnitsWidget::showAddDialog);
 
         unitList = std::make_unique<Wt::WTable>(this);
         unitList->addStyleClass("table table-stripped table-bordered");
+
         populateTableHeader(*unitList, "Nazwa", L"Ilość", L"Jednostka bazowa", L"Usuń");
         populateUnitsList();
     }
@@ -29,6 +34,7 @@ class UnitsWidget : public Wt::WContainerWidget {
     }
 
    private:
+    Database* db;
     std::unique_ptr<Wt::WTable> unitList;
     std::unordered_map<int, Wt::Dbo::dbo_traits<Unit>::IdType> rowToID;
     std::unique_ptr<Wt::WPushButton> addButton;
@@ -39,7 +45,7 @@ class UnitsWidget : public Wt::WContainerWidget {
         auto quantityField = createLabeledField<Wt::WLineEdit>(L"Ilość", dialog->contents());
 
         auto baseUnitField = createLabeledField<Wt::WComboBox>("Jednostka bazowa", dialog->contents());
-        auto baseUnitIDs = populateComboBox<Unit>(*baseUnitField, [](const Unit& elem) { return elem.name; });
+        auto baseUnitIDs = populateComboBox<Unit>(*db, *baseUnitField, [](const Unit& elem) { return elem.name; });
         baseUnitField->insertItem(0, "Brak");
         baseUnitIDs.insert(baseUnitIDs.begin(), Wt::Dbo::dbo_traits<Unit>::invalidId());
 
@@ -86,23 +92,27 @@ class UnitsWidget : public Wt::WContainerWidget {
         unit->name = name;
         unit->quantity = std::stod(quantity);
 
-        Wt::Dbo::Transaction transaction(db);
-        Wt::Dbo::ptr<Unit> baseUnit = db.find<Unit>().where("id = ?").bind(baseUnitID);
+        Wt::Dbo::Transaction transaction(*db);
+        Wt::Dbo::ptr<Unit> baseUnit = db->find<Unit>().where("id = ?").bind(baseUnitID);
         unit->baseUnitID = baseUnit.id();
 
-        db.add<Unit>(unit);
+        db->add<Unit>(unit);
     }
 
     void populateUnitsTable() {
         rowToID.clear();
-        populateTable<Unit>(*unitList, [&](const Wt::Dbo::ptr<Unit>& unit, int row) {
-            auto transaction = Wt::Dbo::Transaction{db};
+        populateTable<Unit>(*db, *unitList, [&](const Wt::Dbo::ptr<Unit>& unit, int row) {
+            auto transaction = Wt::Dbo::Transaction{*db};
             rowToID.insert(std::make_pair(row, unit.id()));
 
-            Wt::Dbo::ptr<Unit> baseUnit = db.find<Unit>().where("id = ?").bind(unit->baseUnitID);
+            Wt::Dbo::ptr<Unit> baseUnit = db->find<Unit>().where("id = ?").bind(unit->baseUnitID);
             auto baseUnitName = baseUnit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? baseUnit->name : L"Brak";
 
             return std::vector<Wt::WString>{unit->name, std::to_string(unit->quantity), baseUnitName, "X"};
+        },
+        [this](const Wt::Dbo::ptr<Unit>& unit) {
+            Wt::Dbo::Transaction t{*db};
+            return unit->ownerID == this->db->users->find(db->login.user())->user()->firmID; 
         });
     }
 
@@ -110,11 +120,11 @@ class UnitsWidget : public Wt::WContainerWidget {
         // setup editing name of unit
         makeTextCellsInteractive(*unitList, 0, [&](int row, const Wt::WLineEdit& field, Wt::WString oldContent) {
             if (Wt::WValidator(true).validate(field.text()).state() != Wt::WValidator::Valid) {
-                return std::move(oldContent);
+                return oldContent;
             }
 
-            Wt::Dbo::Transaction transaction{db};
-            Wt::Dbo::ptr<Unit> unit = db.find<Unit>().where("id = ?").bind(rowToID[row]);
+            Wt::Dbo::Transaction transcation{*db};
+            Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(rowToID[row]);
 
             updateUnits(field.text(), unit->name);
             unit.modify()->name = field.text();
@@ -130,8 +140,8 @@ class UnitsWidget : public Wt::WContainerWidget {
                 return oldContent.narrow();
             }
 
-            Wt::Dbo::Transaction transaction{db};
-            Wt::Dbo::ptr<Unit> unit = db.find<Unit>().where("id = ?").bind(rowToID[row]);
+            Wt::Dbo::Transaction transcation{*db};
+            Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(rowToID[row]);
             unit.modify()->quantity = std::stod(field.text());
             return std::to_string(unit->quantity);
         });
@@ -145,11 +155,11 @@ class UnitsWidget : public Wt::WContainerWidget {
                 auto oldUnitName = oldContent->text();
 
                 auto unitIDs =
-                    populateComboBox<Unit>(editField, [](const Unit& unit) { return unit.name; },
+                    populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },
                                            [this, row](Wt::Dbo::ptr<Unit> potentialNewUnit) {
-                                               auto transaction = Wt::Dbo::Transaction(db);
-                                               Wt::Dbo::ptr<Unit> currentUnit = db.find<Unit>().where("id = ?").bind(rowToID[row]);
-                                               if (potentialNewUnit.id() == currentUnit.id() || Unit::isDescended(potentialNewUnit.id(), currentUnit.id())) {
+                                               auto transaction = Wt::Dbo::Transaction(*db);
+                                               Wt::Dbo::ptr<Unit> currentUnit = db->find<Unit>().where("id = ?").bind(rowToID[row]);
+                                               if (potentialNewUnit.id() == currentUnit.id() || Unit::isDescended(*db, potentialNewUnit.id(), currentUnit.id())) {
                                                    return false;
                                                }
                                                return true;
@@ -163,8 +173,8 @@ class UnitsWidget : public Wt::WContainerWidget {
                 editField.setCurrentIndex(indexOfOldUnit);
             },
             [this, unitKeys](int row, const Wt::WComboBox& filledEditField, Wt::WString oldContent) {
-                auto transaction = Wt::Dbo::Transaction(db);
-                Wt::Dbo::ptr<Unit> currentUnit = db.find<Unit>().where("id = ?").bind(rowToID[row]);
+                auto transaction = Wt::Dbo::Transaction(*db);
+                Wt::Dbo::ptr<Unit> currentUnit = db->find<Unit>().where("id = ?").bind(rowToID[row]);
 
                 if (filledEditField.currentIndex() < 0) {
                     currentUnit.modify()->baseUnitID = Wt::Dbo::dbo_traits<Unit>::invalidId();
@@ -179,11 +189,11 @@ class UnitsWidget : public Wt::WContainerWidget {
     void setupDeleteAction() {
         for (auto row = unitList->headerCount(); row < unitList->rowCount(); row++) {
             unitList->elementAt(row, 3)->clicked().connect(std::bind([this, row] {
-                Wt::Dbo::Transaction transaction(db);
+                Wt::Dbo::Transaction transaction(*db);
 
-                auto unit = (Wt::Dbo::ptr<Unit>)db.find<Unit>().where("id = ?").bind(rowToID[row]);
+                auto unit = (Wt::Dbo::ptr<Unit>)db->find<Unit>().where("id = ?").bind(rowToID[row]);
                 {  // units must  be out of scope later(some strange thing happens in WT)
-                    auto units = (Wt::Dbo::collection<Wt::Dbo::ptr<Unit>>)db.find<Unit>();
+                    auto units = (Wt::Dbo::collection<Wt::Dbo::ptr<Unit>>)db->find<Unit>();
                     for (const auto& potentialBaseUnit : units) {
                         if (potentialBaseUnit->baseUnitID == unit.id()) {
                             auto dialog = new Wt::WDialog(L"Jednostka jest używana");
@@ -192,7 +202,7 @@ class UnitsWidget : public Wt::WContainerWidget {
 
                             auto message = Wt::WString(L"Jednoska jest używana jako jednoska bazowa dla ") + potentialBaseUnit->name;
                             message += L", więc nie może zostać usunięta";
-                            auto messageWidget = new Wt::WText(std::move(message), dialog->contents());
+                            new Wt::WText(std::move(message), dialog->contents());
 
                             dialog->finished().connect(std::bind([dialog] { delete dialog; }));
 
@@ -202,7 +212,7 @@ class UnitsWidget : public Wt::WContainerWidget {
                     }
                 }
 
-                auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db.find<Recipe>();
+                auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db->find<Recipe>();
                 for (const auto& recipe : recipes) {
                     for (const auto& ingredientRecord : recipe->ingredientRecords) {
                         if (ingredientRecord->unitID == unit.id()) {
@@ -212,7 +222,7 @@ class UnitsWidget : public Wt::WContainerWidget {
 
                             auto message = Wt::WString(L"Jednostka jest używana co najmniej w przepisie ") + recipe->name;
                             message += L", więc nie może zostać usunięta.";
-                            auto messageWidget = new Wt::WText(std::move(message), dialog->contents());
+                            new Wt::WText(std::move(message), dialog->contents());
 
                             dialog->finished().connect(std::bind([dialog] { delete dialog; }));
 
@@ -222,7 +232,7 @@ class UnitsWidget : public Wt::WContainerWidget {
                     }
                 }
 
-                auto ingredients = (Wt::Dbo::collection<Wt::Dbo::ptr<Ingredient>>)db.find<Ingredient>();
+                auto ingredients = (Wt::Dbo::collection<Wt::Dbo::ptr<Ingredient>>)db->find<Ingredient>();
                 for (const auto& ingredient : ingredients) {
                     if (ingredient->unitID == unit.id()) {
                         auto dialog = new Wt::WDialog(L"Jednostka jest używana");
@@ -231,7 +241,7 @@ class UnitsWidget : public Wt::WContainerWidget {
 
                         auto message = Wt::WString(L"Jednostka jest używana co najmniej w składniku ") + ingredient->name;
                         message += L", więc nie może zostać usunięta.";
-                        auto messageWidget = new Wt::WText(std::move(message), dialog->contents());
+                        new Wt::WText(std::move(message), dialog->contents());
 
                         dialog->finished().connect(std::bind([dialog] { delete dialog; }));
 

@@ -11,7 +11,7 @@ add_definitions(-std=c++14 -Wall -Wextra)
 #project files and include pathes
 file(GLOB_RECURSE SRCS "CukierniaRecepty/*.cpp")
 
-add_executable(CukierniaRecepty ${SRCS})
+add_executable(cukiernia.wt ${SRCS})
 
 # wt.lib;wtdbo.lib;wtdbomysql.lib;wthttp.lib; -> change buitltin httpd to fcgi. Libs need to be 32bit
-target_link_libraries(CukierniaRecepty wt wtdbo wtdbomysql wtfcgi)
+target_link_libraries(cukiernia.wt boost_system wt wtdbo wtdbomysql wtfcgi)

@@ -21,20 +21,20 @@ class IngredientRecord {
         Wt::Dbo::belongsTo(action, recipe, "recipe");
     }
 
-	double price() const{
+	double price(Database& db) const{
         Wt::Dbo::ptr<Ingredient> ingredient = db.find<Ingredient>().where("id = ?").bind(this->ingredientID);
         if (ingredient.id() == Wt::Dbo::dbo_traits<Ingredient>::invalidId()) {
             return -1;
         }
 
         auto ingredientRecordQuantityInBaseUnits = 1.0;
-        auto ingredientRecordUnitPath = Unit::pathToTheRoot(this->unitID);
+        auto ingredientRecordUnitPath = Unit::pathToTheRoot(db, this->unitID);
         for (auto i = 0u; i < ingredientRecordUnitPath.size(); i++) {
             ingredientRecordQuantityInBaseUnits *= ingredientRecordUnitPath[i]->quantity;
         }
 
         auto ingredientQuantityInBaseUnits = 1.0;
-        auto ingredientUnitPath = Unit::pathToTheRoot(ingredient->unitID);
+        auto ingredientUnitPath = Unit::pathToTheRoot(db, ingredient->unitID);
         for (auto i = 0u; i < ingredientUnitPath.size(); i++) {
             ingredientQuantityInBaseUnits *= ingredientUnitPath[i]->quantity;
         }
@@ -47,20 +47,22 @@ class Recipe {
    public:
     Wt::WString name = "Nieznana nazwa";
     Wt::Dbo::collection<Wt::Dbo::ptr<IngredientRecord>> ingredientRecords;
+    int ownerID = -1;
 
     template <class Action>
     void persist(Action& action) {
         Wt::Dbo::field(action, name, "name");
+        Wt::Dbo::field(action, ownerID, "owner_id");
         Wt::Dbo::hasMany(action, ingredientRecords, Wt::Dbo::ManyToOne, "recipe");
     }
 
     //-1 in the case of error, otherwise total price of this recipe
-    double totalPrice() const {
+    double totalPrice(Database& db) const {
         auto transaction = Wt::Dbo::Transaction{db};
 
         auto result = 0.0;
         for (const auto& ingredientRecord : ingredientRecords) {
-            auto price = ingredientRecord->price();
+            auto price = ingredientRecord->price(db);
             if (price == -1) {
                 return -1;
             }

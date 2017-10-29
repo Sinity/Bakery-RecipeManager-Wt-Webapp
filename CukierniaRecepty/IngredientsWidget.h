@@ -13,13 +13,18 @@
 
 class IngredientsWidget : public Wt::WContainerWidget {
    public:
-    IngredientsWidget(Wt::WContainerWidget* root = nullptr) {
+    IngredientsWidget(Wt::WContainerWidget*, Database& db) {
+        this->db = &db;
         addButton = std::make_unique<Wt::WPushButton>(L"Dodaj składnik", this);
         addButton->clicked().connect(this, &IngredientsWidget::showAddDialog);
 
         ingredientList = std::make_unique<Wt::WTable>(this);
         ingredientList->addStyleClass("table table-stripped table-bordered");
-        populateTableHeader(*ingredientList, "Nazwa", "Cena", "Jednostka", L"Usuń");
+
+        if(this->db->users->find(this->db->login.user())->user()->accessLevel == 0)
+            populateTableHeader(*ingredientList, "Nazwa", "Jednostka", L"Usuń");
+        else
+            populateTableHeader(*ingredientList, "Nazwa", "Cena", "Jednostka", L"Usuń");
         populateIngredientList();
     }
 
@@ -30,6 +35,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
     }
 
    private:
+    Database* db;
     std::unique_ptr<Wt::WTable> ingredientList;
     std::unordered_map<int, Wt::Dbo::dbo_traits<Ingredient>::IdType> rowToID;
     std::unique_ptr<Wt::WPushButton> addButton;
@@ -39,7 +45,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         auto nameField = createLabeledField<Wt::WLineEdit>("Nazwa", dialog->contents());
         auto priceField = createLabeledField<Wt::WLineEdit>("Cena", dialog->contents());
         auto unitField = createLabeledField<Wt::WComboBox>("Jednoska", dialog->contents());
-        auto unitIDs = populateComboBox<Unit>(*unitField, [](const Unit& elem) { return elem.name; });
+        auto unitIDs = populateComboBox<Unit>(*db, *unitField, [](const Unit& elem) { return elem.name; });
         auto validationInfo = new Wt::WText(dialog->contents());
 
         // setup validators
@@ -72,7 +78,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
                 ingredient->name = nameField->text();
                 ingredient->price = std::stod(priceField->text());
                 ingredient->unitID = unitIDs[unitField->currentIndex()];
-                db.add<Ingredient>(ingredient);
+                db->add<Ingredient>(ingredient);
                 populateIngredientList();
             }
 
@@ -84,14 +90,21 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
     void populateIngredientTable() {
         rowToID.clear();
-        populateTable<Ingredient>(*ingredientList, [&](const Wt::Dbo::ptr<Ingredient>& ingredient, int row) {
+        populateTable<Ingredient>(*db, *ingredientList, [&](const Wt::Dbo::ptr<Ingredient>& ingredient, int row) {
             rowToID.insert(std::make_pair(row, ingredient.id()));
-            auto transaction = Wt::Dbo::Transaction{db};
+            auto transaction = Wt::Dbo::Transaction{*db};
 
-            Wt::Dbo::ptr<Unit> unit = db.find<Unit>().where("id = ?").bind(ingredient->unitID);
+            Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(ingredient->unitID);
             auto unitName = unit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? unit->name : L"Błędna jednostka";
 
+            if(this->db->users->find(this->db->login.user())->user()->accessLevel == 0)
+                return std::vector<Wt::WString>{ingredient->name, unitName, "X"};
+            
             return std::vector<Wt::WString>{ingredient->name, std::to_string(ingredient->price), unitName, "X"};
+        },
+        [this](const Wt::Dbo::ptr<Ingredient>& ingredient) {
+            Wt::Dbo::Transaction t{*db};
+            return ingredient->ownerID == this->db->users->find(db->login.user())->user()->firmID; 
         });
     }
 
@@ -99,42 +112,43 @@ class IngredientsWidget : public Wt::WContainerWidget {
         // make ingredient name editable
         makeTextCellsInteractive(*ingredientList, 0, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WValidator(true).validate(filledField.text()).state() != Wt::WValidator::Valid) {
-                return std::move(oldContent);
+                return oldContent;
             }
 
-            Wt::Dbo::Transaction transaction(db);
-            Wt::Dbo::ptr<Ingredient> ingredient = db.find<Ingredient>().where("id = ?").bind(rowToID[row]);
+            Wt::Dbo::Transaction transaction(*db);
+            Wt::Dbo::ptr<Ingredient> ingredient = db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
             ingredient.modify()->name = filledField.text();
             return Wt::WString(ingredient->name);
         });
 
         // make ingredient price editable
-        makeTextCellsInteractive(*ingredientList, 1, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
-            Wt::WDoubleValidator validator;
-            validator.setMandatory(true);
-            if (validator.validate(filledField.text()).state() != Wt::WValidator::Valid) {
-                return oldContent.narrow();
-            }
+        if(this->db->users->find(this->db->login.user())->user()->accessLevel != 0)
+            makeTextCellsInteractive(*ingredientList, 1, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+                Wt::WDoubleValidator validator;
+                validator.setMandatory(true);
+                if (validator.validate(filledField.text()).state() != Wt::WValidator::Valid) {
+                    return oldContent.narrow();
+                }
 
-            Wt::Dbo::Transaction transaction(db);
-            Wt::Dbo::ptr<Ingredient> ingredient = db.find<Ingredient>().where("id = ?").bind(rowToID[row]);
-            ingredient.modify()->price = std::stod(filledField.text());
-            return std::to_string(ingredient->price);
-        });
+                Wt::Dbo::Transaction transaction(*db);
+                Wt::Dbo::ptr<Ingredient> ingredient = db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
+                ingredient.modify()->price = std::stod(filledField.text());
+                return std::to_string(ingredient->price);
+            });
 
         // make ingredient unit editable
         auto unitKeys = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Unit>::IdType>>();
         makeCellsInteractive<Wt::WComboBox>(
-            *ingredientList, 2,
+            *ingredientList, (this->db->users->find(this->db->login.user())->user()->accessLevel == 0 ? 1 : 2),
             [this, unitKeys](int row, Wt::WComboBox& editField) {
                 *unitKeys =
-                    populateComboBox<Unit>(editField, [](const Unit& unit) { return unit.name; },
+                    populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },
                                            [this, row](Wt::Dbo::ptr<Unit> potentialUnit) {
-                                               auto transaction = Wt::Dbo::Transaction(db);
-                                               auto ingredient = (Wt::Dbo::ptr<Ingredient>)db.find<Ingredient>().where("id = ?").bind(rowToID[row]);
+                                               auto transaction = Wt::Dbo::Transaction(*db);
+                                               auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
 
-                                               if (ingredient->unitID == potentialUnit.id() || Unit::isDescended(ingredient->unitID, potentialUnit.id()) ||
-                                                   Unit::isDescended(potentialUnit.id(), ingredient->unitID)) {
+                                               if (ingredient->unitID == potentialUnit.id() || Unit::isDescended(*db, ingredient->unitID, potentialUnit.id()) ||
+                                                   Unit::isDescended(*db, potentialUnit.id(), ingredient->unitID)) {
                                                    return true;
                                                }
                                                return false;
@@ -145,11 +159,11 @@ class IngredientsWidget : public Wt::WContainerWidget {
                 auto indexOfOldUnit = editField.findText(oldUnitName);
                 editField.setCurrentIndex(indexOfOldUnit);
             },
-            [this, unitKeys](int row, const Wt::WComboBox& filledEditField, Wt::WString oldContent) {
-                auto transaction = Wt::Dbo::Transaction(db);
+            [this, unitKeys](int row, const Wt::WComboBox& filledEditField, Wt::WString) {
+                auto transaction = Wt::Dbo::Transaction(*db);
 
-                auto ingredient = (Wt::Dbo::ptr<Ingredient>)db.find<Ingredient>().where("id = ?").bind(rowToID[row]);
-                auto unit = (Wt::Dbo::ptr<Unit>)db.find<Unit>().where("id = ?").bind((*unitKeys)[filledEditField.currentIndex()]);
+                auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
+                auto unit = (Wt::Dbo::ptr<Unit>)db->find<Unit>().where("id = ?").bind((*unitKeys)[filledEditField.currentIndex()]);
                 ingredient.modify()->unitID = unit.id();
 
                 return filledEditField.currentText();
@@ -158,12 +172,12 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
     void setupDeleteAction() {
         for (auto row = ingredientList->headerCount(); row < ingredientList->rowCount(); row++) {
-            ingredientList->elementAt(row, 3)->clicked().connect(std::bind([this, row] {
-                Wt::Dbo::Transaction transaction(db);
+            ingredientList->elementAt(row, (this->db->users->find(this->db->login.user())->user()->accessLevel == 0 ? 2 : 3))->clicked().connect(std::bind([this, row] {
+                Wt::Dbo::Transaction transaction(*db);
 
-                auto ingredient = (Wt::Dbo::ptr<Ingredient>)db.find<Ingredient>().where("id = ?").bind(rowToID[row]);
+                auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
 
-                auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db.find<Recipe>();
+                auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db->find<Recipe>();
                 for (const auto& recipe : recipes) {
                     for (const auto& ingredientRecord : recipe->ingredientRecords) {
                         if (ingredientRecord->ingredientID == ingredient.id()) {
@@ -173,7 +187,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
                             auto message = Wt::WString(L"Składnik jest używany co najmniej w przepisie ") + recipe->name;
                             message += L", więc nie może zostać usunięty.";
-                            auto messageWidget = new Wt::WText(std::move(message), dialog->contents());
+                            new Wt::WText(std::move(message), dialog->contents());
 
                             dialog->finished().connect(std::bind([dialog] { delete dialog; }));
 

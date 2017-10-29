@@ -9,7 +9,7 @@
 #include "database.h"
 
 namespace {
-void populateTableHeaderImpl(Wt::WTable& table, int column) {
+void populateTableHeaderImpl(Wt::WTable&, int) {
 }
 
 template <class HeadString, class... String>
@@ -65,7 +65,7 @@ void makeTextCellsInteractive(Wt::WTable& table, int column,
 
 // Returns primary keys of objects which are reffered by combo box, order by indices of combo box
 template <class T>
-std::vector<typename Wt::Dbo::dbo_traits<T>::IdType> populateComboBox(Wt::WComboBox& comboBox, std::function<Wt::WString(const T&)> fieldSelector,
+std::vector<typename Wt::Dbo::dbo_traits<T>::IdType> populateComboBox(Database& db, Wt::WComboBox& comboBox, std::function<Wt::WString(const T&)> fieldSelector,
                                                                       std::function<bool(typename Wt::Dbo::ptr<T>)> filter = [](typename Wt::Dbo::ptr<T>) {
                                                                           return true;
                                                                       }) {
@@ -84,8 +84,8 @@ std::vector<typename Wt::Dbo::dbo_traits<T>::IdType> populateComboBox(Wt::WCombo
 }
 
 template <class T>
-void populateTable(Wt::WTable& table, std::function<std::vector<Wt::WString>(const Wt::Dbo::ptr<T>& element, int row)> fieldLayoutMapper,
-                   std::function<bool(const Wt::Dbo::ptr<T>& element)> filter = [](const Wt::Dbo::ptr<T>& element) { return true; }) {
+void populateTable(Database& db, Wt::WTable& table, std::function<std::vector<Wt::WString>(const Wt::Dbo::ptr<T>& element, int row)> fieldLayoutMapper,
+                   std::function<bool(const Wt::Dbo::ptr<T>& element)> filter = [](const Wt::Dbo::ptr<T>&) { return true; }) {
     while (table.rowCount() != table.headerCount()) {
         table.deleteRow(table.rowCount() - 1);
     }
