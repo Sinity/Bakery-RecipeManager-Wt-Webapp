@@ -90,7 +90,6 @@ class App : public Wt::WApplication {
     void setupAuth() {
         authWidget = std::make_unique<Wt::Auth::AuthWidget>(Database::auth(), *(db.users), db.login);
         authWidget->model()->addPasswordAuth(&Database::passwordAuth());
-        authWidget->setRegistrationEnabled(true);
         authWidget->processEnvironment();
         menu->addItem("Login", authWidget.get());
 

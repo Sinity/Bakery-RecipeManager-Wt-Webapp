@@ -45,7 +45,8 @@ class UnitsWidget : public Wt::WContainerWidget {
         auto quantityField = createLabeledField<Wt::WLineEdit>(L"Ilość", dialog->contents());
 
         auto baseUnitField = createLabeledField<Wt::WComboBox>("Jednostka bazowa", dialog->contents());
-        auto baseUnitIDs = populateComboBox<Unit>(*db, *baseUnitField, [](const Unit& elem) { return elem.name; });
+        auto baseUnitIDs = populateComboBox<Unit>(*db, *baseUnitField, [](const Unit& elem) { return elem.name; },
+            [this](const Wt::Dbo::ptr<Unit>& elem) { return elem->ownerID == db->users->find(db->login.user())->user()->firmID; });
         baseUnitField->insertItem(0, "Brak");
         baseUnitIDs.insert(baseUnitIDs.begin(), Wt::Dbo::dbo_traits<Unit>::invalidId());
 
@@ -91,6 +92,7 @@ class UnitsWidget : public Wt::WContainerWidget {
         auto unit = new Unit;  // seems that it's necessary
         unit->name = name;
         unit->quantity = std::stod(quantity);
+        unit->ownerID = db->users->find(db->login.user())->user()->firmID;
 
         Wt::Dbo::Transaction transaction(*db);
         Wt::Dbo::ptr<Unit> baseUnit = db->find<Unit>().where("id = ?").bind(baseUnitID);
@@ -112,7 +114,7 @@ class UnitsWidget : public Wt::WContainerWidget {
         },
         [this](const Wt::Dbo::ptr<Unit>& unit) {
             Wt::Dbo::Transaction t{*db};
-            return unit->ownerID == this->db->users->find(db->login.user())->user()->firmID; 
+            return unit->ownerID == this->db->users->find(db->login.user())->user()->firmID;
         });
     }
 

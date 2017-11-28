@@ -21,7 +21,7 @@ class IngredientRecord {
         Wt::Dbo::belongsTo(action, recipe, "recipe");
     }
 
-	double price(Database& db) const{
+	double scaledIngredientValue(Database& db, std::function<double(const Ingredient&)> value) const {
         Wt::Dbo::ptr<Ingredient> ingredient = db.find<Ingredient>().where("id = ?").bind(this->ingredientID);
         if (ingredient.id() == Wt::Dbo::dbo_traits<Ingredient>::invalidId()) {
             return -1;
@@ -29,17 +29,17 @@ class IngredientRecord {
 
         auto ingredientRecordQuantityInBaseUnits = 1.0;
         auto ingredientRecordUnitPath = Unit::pathToTheRoot(db, this->unitID);
-        for (auto i = 0u; i < ingredientRecordUnitPath.size(); i++) {
-            ingredientRecordQuantityInBaseUnits *= ingredientRecordUnitPath[i]->quantity;
+        for (const auto& unit : ingredientRecordUnitPath) {
+            ingredientRecordQuantityInBaseUnits *= unit->quantity;
         }
 
         auto ingredientQuantityInBaseUnits = 1.0;
         auto ingredientUnitPath = Unit::pathToTheRoot(db, ingredient->unitID);
-        for (auto i = 0u; i < ingredientUnitPath.size(); i++) {
-            ingredientQuantityInBaseUnits *= ingredientUnitPath[i]->quantity;
+        for (const auto& unit : ingredientUnitPath) {
+            ingredientQuantityInBaseUnits *= unit->quantity;
         }
 
-        return ingredient->price / ingredientQuantityInBaseUnits * ingredientRecordQuantityInBaseUnits * this->quantity;
+        return value(*ingredient) / ingredientQuantityInBaseUnits * ingredientRecordQuantityInBaseUnits * this->quantity;
     }
 };
 
@@ -56,18 +56,18 @@ class Recipe {
         Wt::Dbo::hasMany(action, ingredientRecords, Wt::Dbo::ManyToOne, "recipe");
     }
 
-    //-1 in the case of error, otherwise total price of this recipe
-    double totalPrice(Database& db) const {
+    //-1 in the case of error, otherwise sum of chosen scaled ingredient values
+    double totalIngredientValue(Database& db, std::function<double(const Ingredient&)> value) const {
         auto transaction = Wt::Dbo::Transaction{db};
 
         auto result = 0.0;
         for (const auto& ingredientRecord : ingredientRecords) {
-            auto price = ingredientRecord->price(db);
-            if (price == -1) {
+            auto sum  = ingredientRecord->scaledIngredientValue(db, [&](const Ingredient& i) { return value(i); });
+            if (sum == -1) {
                 return -1;
             }
 
-            result += price;
+            result += sum;
         }
 
         return result;

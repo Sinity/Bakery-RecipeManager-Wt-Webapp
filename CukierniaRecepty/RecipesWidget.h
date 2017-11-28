@@ -30,9 +30,9 @@ class RecipesWidget : public Wt::WContainerWidget {
         recipeList->addStyleClass("table table-stripped table-bordered");
 
         if(this->db->users->find(this->db->login.user())->user()->accessLevel == 0)
-            populateTableHeader(*recipeList, "Nazwa", L"Usuń", L"Szczegóły");
+            populateTableHeader(*recipeList, "Nazwa", L"Kaloryczność", L"Tłuszcze", L"Kwasy nasycone", L"Węglowodany", "Cukry", "Proteiny", L"Sól", L"Usuń", L"Szczegóły");
         else
-            populateTableHeader(*recipeList, "Nazwa", L"Koszt", L"Usuń", L"Szczegóły");
+            populateTableHeader(*recipeList, "Nazwa", L"Kaloryczność", L"Tłuszcze", L"Kwasy nasycone", L"Węglowodany", "Cukry", "Proteiny", L"Sól", "Koszt", L"Usuń", L"Szczegóły");
         populateRecipeList();
     }
 
@@ -85,7 +85,8 @@ class RecipesWidget : public Wt::WContainerWidget {
         ingredientQuantityField->setValidator(ingredientQuantityValidator);
 
         // fill combo box fields and setup combo box index <===> id mappers
-        auto tempIngredientIDs = populateComboBox<Ingredient>(*db, *ingredientField, [](const Ingredient& ingredient) { return ingredient.name; });
+        auto tempIngredientIDs = populateComboBox<Ingredient>(*db, *ingredientField, [](const Ingredient& ingredient) { return ingredient.name; },
+            [this](const Wt::Dbo::ptr<Ingredient>& elem) { return elem->ownerID == db->users->find(db->login.user())->user()->firmID; });
         auto ingredientIDs = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Ingredient>::IdType>>(std::move(tempIngredientIDs));
 
         auto unitIDs = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Unit>::IdType>>();
@@ -183,12 +184,22 @@ class RecipesWidget : public Wt::WContainerWidget {
             auto transaction = Wt::Dbo::Transaction{*db};
             rowToID.insert(std::make_pair(row, recipe.id()));
 
-            if(db->users->find(db->login.user())->user()->accessLevel == 0) {
-                return std::vector<Wt::WString>{recipe->name, "X"};
-            }
+            auto price = recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.price; });
+            auto kcal = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.kcal; }));
+            auto fat = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.fat; }));
+            auto saturatedAcids = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.saturatedAcids; }));
+            auto carbohydrates = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.carbohydrates; }));
+            auto sugar = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.sugar; }));
+            auto protein = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.protein; }));
+            auto salt = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
 
-            auto price = recipe->totalPrice(*db);
-            return std::vector<Wt::WString>{recipe->name, price == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(price), "X"};
+            std::vector<Wt::WString> columns{recipe->name, kcal, fat, saturatedAcids, carbohydrates, sugar, protein, salt};
+            if(db->users->find(db->login.user())->user()->accessLevel != 0) {
+                columns.push_back(price == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(price));
+            }
+            columns.push_back("X");
+
+            return columns;
         }, filter);
     }
 
@@ -207,7 +218,7 @@ class RecipesWidget : public Wt::WContainerWidget {
 
     void setupDeleteAction() {
         for (auto row = recipeList->headerCount(); row < recipeList->rowCount(); row++) {
-            recipeList->elementAt(row, (db->users->find(db->login.user())->user()->accessLevel == 0 ? 1 : 2))->clicked().connect(std::bind([this, row] {
+            recipeList->elementAt(row, recipeList->columnCount() - 2)->clicked().connect(std::bind([this, row] {
                 Wt::Dbo::Transaction transaction(*db);
 
                 auto recipe = (Wt::Dbo::ptr<Recipe>)db->find<Recipe>().where("id = ?").bind(rowToID[row]);

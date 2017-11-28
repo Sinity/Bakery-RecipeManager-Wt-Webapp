@@ -52,7 +52,8 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
         Wt::WDialog* dialog = new Wt::WDialog(L"Dodaj składnik");
 
         auto nameField = createLabeledField<Wt::WComboBox>(L"Składnik", dialog->contents());
-        auto ingredientIDs = populateComboBox<Ingredient>(*db, *nameField, [](const Ingredient& elem) { return elem.name; });
+        auto ingredientIDs = populateComboBox<Ingredient>(*db, *nameField, [](const Ingredient& elem) { return elem.name; },
+            [this](const Wt::Dbo::ptr<Ingredient>& elem) { return elem->ownerID == db->users->find(db->login.user())->user()->firmID; });
 
         auto quantityField = createLabeledField<Wt::WLineEdit>(L"Ilość", dialog->contents());
 
