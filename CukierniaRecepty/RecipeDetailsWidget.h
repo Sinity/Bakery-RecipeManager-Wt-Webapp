@@ -213,11 +213,27 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
     void setupDeleteAction() {
         for (auto row = ingredientList->headerCount(); row < ingredientList->rowCount(); row++) {
             ingredientList->elementAt(row, 3)->clicked().connect(std::bind([this, row] {
-                Wt::Dbo::Transaction transaction(*db);
+                auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia składnika przepisu");
+                auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
+                auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());
+                new Wt::WText(L"Czy napewno usunąć składnik tego przepisu?", confirmationDialog->contents());
+                yesButton->clicked().connect(confirmationDialog, &Wt::WDialog::accept);
+                noButton->clicked().connect(confirmationDialog, &Wt::WDialog::reject);
+                confirmationDialog->rejectWhenEscapePressed();
 
-                auto ingredientRecord = (Wt::Dbo::ptr<IngredientRecord>)db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
-                ingredientRecord.remove();
-                populateIngredientList();  // deleting screws up references to rows in lambdas inside, so rebuild table
+                confirmationDialog->finished().connect(std::bind([this, confirmationDialog, row] {
+                    if (confirmationDialog->result() != Wt::WDialog::Accepted)
+                        return;
+                            
+                    Wt::Dbo::Transaction transaction(*db);
+
+                    auto ingredientRecord = (Wt::Dbo::ptr<IngredientRecord>)db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
+                    ingredientRecord.remove();
+                    populateIngredientList();  // deleting screws up references to rows in lambdas inside, so rebuild table
+                    delete confirmationDialog;
+                }));
+
+                confirmationDialog->show();
             }));
         }
     }

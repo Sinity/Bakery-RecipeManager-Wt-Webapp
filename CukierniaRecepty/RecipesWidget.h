@@ -219,12 +219,28 @@ class RecipesWidget : public Wt::WContainerWidget {
     void setupDeleteAction() {
         for (auto row = recipeList->headerCount(); row < recipeList->rowCount(); row++) {
             recipeList->elementAt(row, recipeList->columnCount() - 2)->clicked().connect(std::bind([this, row] {
-                Wt::Dbo::Transaction transaction(*db);
+                auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia przepisu");
+                auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
+                auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());
+                new Wt::WText(L"Czy napewno usunąć przepis?", confirmationDialog->contents());
+                yesButton->clicked().connect(confirmationDialog, &Wt::WDialog::accept);
+                noButton->clicked().connect(confirmationDialog, &Wt::WDialog::reject);
+                confirmationDialog->rejectWhenEscapePressed();
 
-                auto recipe = (Wt::Dbo::ptr<Recipe>)db->find<Recipe>().where("id = ?").bind(rowToID[row]);
-                recipe.modify()->ingredientRecords.clear();
-                recipe.remove();
-                populateRecipeList();
+                confirmationDialog->finished().connect(std::bind([this, confirmationDialog, row] {
+                    if (confirmationDialog->result() != Wt::WDialog::Accepted)
+                        return;
+                            
+                    Wt::Dbo::Transaction transaction(*db);
+
+                    auto recipe = (Wt::Dbo::ptr<Recipe>)db->find<Recipe>().where("id = ?").bind(rowToID[row]);
+                    recipe.modify()->ingredientRecords.clear();
+                    recipe.remove();
+                    populateRecipeList();
+                    delete confirmationDialog;
+                }));
+
+                confirmationDialog->show();
             }));
         }
     }

@@ -27,11 +27,10 @@ class Database : public Wt::Dbo::Session {
 
     void ensureTablesExisting() {
         try {
-            printf("\n\n\nTable Creation code: \n\n%s\n\n\n", this->tableCreationSql().c_str());
             this->createTables();
-            printf("\n\n\nCreated tables\n\n\n");
-        } catch (...) {
-            printf("\n\n\nTables are already exsting, or something bad happened\n\n\n"); // TODO: make it not vague
+            Wt::log("notice") << "Created tables";
+        } catch (const Wt::Dbo::Exception& e) {
+            Wt::log("warning") << "Exception while creating db schema(most likely tables already exist), error code: \"" << e.code() << "\"";
         }
     }
 

@@ -26,7 +26,7 @@ void makeCellsInteractive(Wt::WTable& table, int column, std::function<void(int 
         table.elementAt(row, column)->clicked().connect(std::bind([=, &table] {
                 auto elem = dynamic_cast<Wt::WText*>(table.elementAt(row, column)->widget(0));
                 if (!elem) {
-                    fprintf(stderr, "makeCellsInteractive(): one of cells contains something else than Wt::WText\n");
+                    Wt::log("error") << "makeCellsInteractive(): one of cells contains something other than Wt::WText";
                     return;
                 }
 

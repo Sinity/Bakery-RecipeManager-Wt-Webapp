@@ -191,38 +191,69 @@ class UnitsWidget : public Wt::WContainerWidget {
     void setupDeleteAction() {
         for (auto row = unitList->headerCount(); row < unitList->rowCount(); row++) {
             unitList->elementAt(row, 3)->clicked().connect(std::bind([this, row] {
-                Wt::Dbo::Transaction transaction(*db);
+                auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia jednostki");
+                auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
+                auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());
+                new Wt::WText(L"Czy napewno usunąć jednostkę?", confirmationDialog->contents());
+                yesButton->clicked().connect(confirmationDialog, &Wt::WDialog::accept);
+                noButton->clicked().connect(confirmationDialog, &Wt::WDialog::reject);
+                confirmationDialog->rejectWhenEscapePressed();
 
-                auto unit = (Wt::Dbo::ptr<Unit>)db->find<Unit>().where("id = ?").bind(rowToID[row]);
-                {  // units must  be out of scope later(some strange thing happens in WT)
-                    auto units = (Wt::Dbo::collection<Wt::Dbo::ptr<Unit>>)db->find<Unit>();
-                    for (const auto& potentialBaseUnit : units) {
-                        if (potentialBaseUnit->baseUnitID == unit.id()) {
+                confirmationDialog->finished().connect(std::bind([this, confirmationDialog, row] {
+                    if (confirmationDialog->result() != Wt::WDialog::Accepted)
+                        return;
+
+                    Wt::Dbo::Transaction transaction(*db);
+
+                    auto unit = (Wt::Dbo::ptr<Unit>)db->find<Unit>().where("id = ?").bind(rowToID[row]);
+                    {  // units must  be out of scope later(some strange thing happens in WT)
+                        auto units = (Wt::Dbo::collection<Wt::Dbo::ptr<Unit>>)db->find<Unit>();
+                        for (const auto& potentialBaseUnit : units) {
+                            if (potentialBaseUnit->baseUnitID == unit.id()) {
+                                auto dialog = new Wt::WDialog(L"Jednostka jest używana");
+                                auto okButton = new Wt::WPushButton("OK", dialog->footer());
+                                okButton->clicked().connect(dialog, &Wt::WDialog::accept);
+
+                                auto message = Wt::WString(L"Jednoska jest używana jako jednoska bazowa dla ") + potentialBaseUnit->name;
+                                message += L", więc nie może zostać usunięta";
+                                new Wt::WText(std::move(message), dialog->contents());
+
+                                dialog->finished().connect(std::bind([dialog] { delete dialog; }));
+
+                                dialog->show();
+                                return;
+                            }
+                        }
+                    }
+
+                    auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db->find<Recipe>();
+                    for (const auto& recipe : recipes) {
+                        for (const auto& ingredientRecord : recipe->ingredientRecords) {
+                            if (ingredientRecord->unitID == unit.id()) {
+                                auto dialog = new Wt::WDialog(L"Jednoskta jest używana");
+                                auto okButton = new Wt::WPushButton("OK", dialog->footer());
+                                okButton->clicked().connect(dialog, &Wt::WDialog::accept);
+
+                                auto message = Wt::WString(L"Jednostka jest używana co najmniej w przepisie ") + recipe->name;
+                                message += L", więc nie może zostać usunięta.";
+                                new Wt::WText(std::move(message), dialog->contents());
+
+                                dialog->finished().connect(std::bind([dialog] { delete dialog; }));
+
+                                dialog->show();
+                                return;
+                            }
+                        }
+                    }
+
+                    auto ingredients = (Wt::Dbo::collection<Wt::Dbo::ptr<Ingredient>>)db->find<Ingredient>();
+                    for (const auto& ingredient : ingredients) {
+                        if (ingredient->unitID == unit.id()) {
                             auto dialog = new Wt::WDialog(L"Jednostka jest używana");
                             auto okButton = new Wt::WPushButton("OK", dialog->footer());
                             okButton->clicked().connect(dialog, &Wt::WDialog::accept);
 
-                            auto message = Wt::WString(L"Jednoska jest używana jako jednoska bazowa dla ") + potentialBaseUnit->name;
-                            message += L", więc nie może zostać usunięta";
-                            new Wt::WText(std::move(message), dialog->contents());
-
-                            dialog->finished().connect(std::bind([dialog] { delete dialog; }));
-
-                            dialog->show();
-                            return;
-                        }
-                    }
-                }
-
-                auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db->find<Recipe>();
-                for (const auto& recipe : recipes) {
-                    for (const auto& ingredientRecord : recipe->ingredientRecords) {
-                        if (ingredientRecord->unitID == unit.id()) {
-                            auto dialog = new Wt::WDialog(L"Jednoskta jest używana");
-                            auto okButton = new Wt::WPushButton("OK", dialog->footer());
-                            okButton->clicked().connect(dialog, &Wt::WDialog::accept);
-
-                            auto message = Wt::WString(L"Jednostka jest używana co najmniej w przepisie ") + recipe->name;
+                            auto message = Wt::WString(L"Jednostka jest używana co najmniej w składniku ") + ingredient->name;
                             message += L", więc nie może zostać usunięta.";
                             new Wt::WText(std::move(message), dialog->contents());
 
@@ -232,28 +263,13 @@ class UnitsWidget : public Wt::WContainerWidget {
                             return;
                         }
                     }
-                }
 
-                auto ingredients = (Wt::Dbo::collection<Wt::Dbo::ptr<Ingredient>>)db->find<Ingredient>();
-                for (const auto& ingredient : ingredients) {
-                    if (ingredient->unitID == unit.id()) {
-                        auto dialog = new Wt::WDialog(L"Jednostka jest używana");
-                        auto okButton = new Wt::WPushButton("OK", dialog->footer());
-                        okButton->clicked().connect(dialog, &Wt::WDialog::accept);
+                    unit.remove();
+                    populateUnitsList();
+                    delete confirmationDialog;
+                }));
 
-                        auto message = Wt::WString(L"Jednostka jest używana co najmniej w składniku ") + ingredient->name;
-                        message += L", więc nie może zostać usunięta.";
-                        new Wt::WText(std::move(message), dialog->contents());
-
-                        dialog->finished().connect(std::bind([dialog] { delete dialog; }));
-
-                        dialog->show();
-                        return;
-                    }
-                }
-
-                unit.remove();
-                populateUnitsList();
+                confirmationDialog->show();
             }));
         }
     }

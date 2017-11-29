@@ -17,6 +17,8 @@
 class App : public Wt::WApplication {
   public:
     App(const Wt::WEnvironment& env) : WApplication(env) {
+        Wt::log("notice") << "Creating new instance of App";
+
         setTitle(L"Cukiernia - System Przepisów");
         setTheme(new Wt::WBootstrapTheme(this));
 
@@ -39,11 +41,29 @@ class App : public Wt::WApplication {
         }));
 
         internalPathChanged().connect(std::bind([this] {
-            Wt::log("notice") << "New internal path: " << internalPath().c_str();
+            Wt::log("notice") << "Internal path changed to: " << internalPath().c_str();
+
             if (!db.login.loggedIn()) {
-                setInternalPath("/login", false);
-                content->setCurrentWidget(authWidget.get());
-                menu->select(0);
+                setInternalPath("/", false);
+                menu->select(-1);
+                content->setCurrentIndex(-1);
+
+                if (!authDialog) {
+                    authDialog = std::make_unique<Wt::WDialog>("Logowanie");
+                    authDialog->contents()->addWidget(authWidget.get());
+                    db.login.changed().connect(authDialog.get(), &Wt::WDialog::accept);
+                    authDialog->finished().connect(std::bind([this] {
+                        authDialog->contents()->removeWidget(authWidget.get());
+                        authDialog = nullptr;
+                    }));
+                }
+
+                authDialog->show();
+            } else if (internalPath() == "/" || internalPath() == "") {
+                menu->select(-1);
+                content->setCurrentIndex(-1);
+            } else if (internalPath() == "/wyloguj") {
+                db.login.logout();
             } else if (internalPath() == "/recipe") {
                 content->setCurrentWidget(recipeDetails.get());
                 menu->select(-1);
@@ -57,21 +77,17 @@ class App : public Wt::WApplication {
 
   private:
     void initDatabase() {
-        try {
-            db.mapClass<Ingredient>("ingredient");
-            db.mapClass<Unit>("unit");
-            db.mapClass<Recipe>("recipe");
-            db.mapClass<IngredientRecord>("ingredient_record");
-            db.mapClass<User>("user");
-            db.mapClass<AuthInfo>("auth_info");
-            db.mapClass<AuthInfo::AuthIdentityType>("auth_identity");
-            db.mapClass<AuthInfo::AuthTokenType>("auth_token");
-            db.ensureTablesExisting();
+        db.mapClass<Ingredient>("ingredient");
+        db.mapClass<Unit>("unit");
+        db.mapClass<Recipe>("recipe");
+        db.mapClass<IngredientRecord>("ingredient_record");
+        db.mapClass<User>("user");
+        db.mapClass<AuthInfo>("auth_info");
+        db.mapClass<AuthInfo::AuthIdentityType>("auth_identity");
+        db.mapClass<AuthInfo::AuthTokenType>("auth_token");
+        db.ensureTablesExisting();
 
-            db.users = std::make_unique<UserDatabase>(db);
-        } catch (std::exception e) {
-            printf("\n\n\n\n\n\n\n\nUNCAUGHT EXCEPTION WHILE INITIALIZING DB: %s\n\n\n\n\n", e.what());
-        }
+        db.users = std::make_unique<UserDatabase>(db);
     }
 
     void setupLayout() {
@@ -91,7 +107,6 @@ class App : public Wt::WApplication {
         authWidget = std::make_unique<Wt::Auth::AuthWidget>(Database::auth(), *(db.users), db.login);
         authWidget->model()->addPasswordAuth(&Database::passwordAuth());
         authWidget->processEnvironment();
-        menu->addItem("Login", authWidget.get());
 
         db.login.changed().connect(std::bind([this] {
             for(auto* menuItem : menu->items()) {
@@ -111,8 +126,10 @@ class App : public Wt::WApplication {
                 menu->addItem("Przepisy", recipes.get());
                 menu->addItem(L"Składniki", ingredients.get());
                 menu->addItem("Jednostki", units.get());
-                menu->addItem("Login", authWidget.get());
+                menu->addItem("Wyloguj", nullptr);
                 content->addWidget(recipeDetails.get());
+
+                menu->select(-1);
             } else {
                 Wt::log("notice") << "User is not logged in!";
 
@@ -124,14 +141,12 @@ class App : public Wt::WApplication {
                     content->removeWidget(units.get());
                 }
 
-                menu->addItem("Login", authWidget.get());
-
                 recipeDetails = nullptr;
                 recipes = nullptr;
                 ingredients = nullptr;
                 units = nullptr;
 
-                setInternalPath("/login", true);
+                setInternalPath("/", true);
             }
         }));
     }
@@ -145,6 +160,7 @@ class App : public Wt::WApplication {
     std::unique_ptr<IngredientsWidget> ingredients;
     std::unique_ptr<UnitsWidget> units;
     std::unique_ptr<Wt::Auth::AuthWidget> authWidget;
+    std::unique_ptr<Wt::WDialog> authDialog;
 
     Database db;
 };
@@ -152,6 +168,7 @@ class App : public Wt::WApplication {
 Wt::WApplication* createApp(const Wt::WEnvironment& env) {
     auto* app = new App(env);
     app->messageResourceBundle().use("auth_strings");
+    app->messageResourceBundle().use("auth_css_theme");
     return app;
 }
 

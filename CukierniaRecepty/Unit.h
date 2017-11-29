@@ -34,7 +34,7 @@ class Unit {
         return results;
     }
 
-    // Warning: it will treat self as a parent of itself
+    // It will treat self as a parent of itself
     static bool isDescended(Database& db, Wt::Dbo::dbo_traits<Unit>::IdType potentialChildID, Wt::Dbo::dbo_traits<Unit>::IdType potentialParentID) {
         if (potentialParentID == Wt::Dbo::dbo_traits<Unit>::invalidId() || potentialChildID == Wt::Dbo::dbo_traits<Unit>::invalidId()) {
             return false;

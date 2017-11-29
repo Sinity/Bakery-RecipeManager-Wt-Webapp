@@ -314,33 +314,49 @@ class IngredientsWidget : public Wt::WContainerWidget {
     void setupDeleteAction() {
         for (auto row = ingredientList->headerCount(); row < ingredientList->rowCount(); row++) {
             ingredientList->elementAt(row, (this->db->users->find(this->db->login.user())->user()->accessLevel == 0 ? 9 : 10))->clicked().connect(std::bind([this, row] {
-                Wt::Dbo::Transaction transaction(*db);
+                auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia składnika");
+                auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
+                auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());
+                new Wt::WText(L"Czy napewno usunąć składnik?", confirmationDialog->contents());
+                yesButton->clicked().connect(confirmationDialog, &Wt::WDialog::accept);
+                noButton->clicked().connect(confirmationDialog, &Wt::WDialog::reject);
+                confirmationDialog->rejectWhenEscapePressed();
 
-                auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
+                confirmationDialog->finished().connect(std::bind([this, confirmationDialog, row] {
+                    if (confirmationDialog->result() != Wt::WDialog::Accepted)
+                        return;
 
-                auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db->find<Recipe>();
-                for (const auto& recipe : recipes) {
-                    for (const auto& ingredientRecord : recipe->ingredientRecords) {
-                        if (ingredientRecord->ingredientID == ingredient.id()) {
-                            auto dialog = new Wt::WDialog(L"Składnik jest używany");
-                            auto okButton = new Wt::WPushButton("OK", dialog->footer());
-                            okButton->clicked().connect(dialog, &Wt::WDialog::accept);
+                    Wt::Dbo::Transaction transaction(*db);
 
-                            auto message = Wt::WString(L"Składnik jest używany co najmniej w przepisie ") + recipe->name;
-                            message += L", więc nie może zostać usunięty.";
-                            new Wt::WText(std::move(message), dialog->contents());
+                    auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
 
-                            dialog->finished().connect(std::bind([dialog] { delete dialog; }));
+                    auto recipes = (Wt::Dbo::collection<Wt::Dbo::ptr<Recipe>>)db->find<Recipe>();
+                    for (const auto& recipe : recipes) {
+                        for (const auto& ingredientRecord : recipe->ingredientRecords) {
+                            if (ingredientRecord->ingredientID == ingredient.id()) {
+                                auto dialog = new Wt::WDialog(L"Składnik jest używany");
+                                auto okButton = new Wt::WPushButton("OK", dialog->footer());
+                                okButton->clicked().connect(dialog, &Wt::WDialog::accept);
 
-                            dialog->show();
+                                auto message = Wt::WString(L"Składnik jest używany co najmniej w przepisie ") + recipe->name;
+                                message += L", więc nie może zostać usunięty.";
+                                new Wt::WText(std::move(message), dialog->contents());
 
-                            return;
+                                dialog->finished().connect(std::bind([dialog] { delete dialog; }));
+
+                                dialog->show();
+
+                                return;
+                            }
                         }
                     }
-                }
 
-                ingredient.remove();
-                populateIngredientList();  // deleting screws up references to rows in lambdas inside, so rebuild table
+                    ingredient.remove();
+                    populateIngredientList();  // deleting screws up references to rows in lambdas inside, so rebuild table
+                    delete confirmationDialog;
+                }));
+
+                confirmationDialog->show();
             }));
         }
     }
