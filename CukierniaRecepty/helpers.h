@@ -8,20 +8,34 @@
 #include <Wt/WLineEdit>
 #include "database.h"
 
-namespace {
-void populateTableHeaderImpl(Wt::WTable&, int) {
-}
+// returns -1 in case there's no matching column
+int findColumn(Wt::WTable& table, const std::wstring& colName) {
+    auto column = -1;
+    for (auto j = 0; j < table.columnCount(); j++) {
+        auto elem = dynamic_cast<Wt::WText*>(table.elementAt(0, j)->widget(0));
+        if (!elem) {
+            Wt::log("error") << "populateTable(): Table header contains something other than Wt::WText";
+            continue;
+        }
+        if (elem->text() == colName) {
+            column = j;
+            break;
+        }
+    }
 
-template <class HeadString, class... String>
-void populateTableHeaderImpl(Wt::WTable& table, int column, const HeadString& head, const String&... tail) {
-    table.elementAt(0, column)->addWidget(new Wt::WText(head));
-    populateTableHeaderImpl(table, column + 1, tail...);
-}
+    return column;
 }
 
 template <class T>
-void makeCellsInteractive(Wt::WTable& table, int column, std::function<void(int row, T& editField)> fieldInitializer,
+void makeCellsInteractive(Wt::WTable& table, const std::wstring& colName, std::function<void(int row, T& editField)> fieldInitializer,
                           std::function<Wt::WString(int row, const T& editField, Wt::WString oldContent)> editAction) {
+    auto column = findColumn(table, colName);
+    if (column == -1) {
+        column = table.columnCount();
+        table.setHeaderCount(1);
+        table.elementAt(0, column)->addWidget(new Wt::WText(colName));
+    }
+
     for (auto row = table.headerCount(); row < table.rowCount(); row++) {
         table.elementAt(row, column)->clicked().connect(std::bind([=, &table] {
                 auto elem = dynamic_cast<Wt::WText*>(table.elementAt(row, column)->widget(0));
@@ -55,9 +69,14 @@ void makeCellsInteractive(Wt::WTable& table, int column, std::function<void(int 
 }
 
 // edit action Returns: final content of the table cell
-void makeTextCellsInteractive(Wt::WTable& table, int column,
+void makeTextCellsInteractive(Wt::WTable& table, const std::wstring& colName,
                               std::function<Wt::WString(int row, const Wt::WLineEdit& editField, Wt::WString oldContent)> editAction) {
-    makeCellsInteractive<Wt::WLineEdit>(table, column, [&table, column](int row, Wt::WLineEdit& editField) {
+    auto column = findColumn(table, colName);
+    if (column == -1) {
+        column = table.columnCount();
+    }
+
+    makeCellsInteractive<Wt::WLineEdit>(table, colName, [&table, column](int row, Wt::WLineEdit& editField) {
         auto currentTextField = (Wt::WText*)table.elementAt(row, column)->widget(0);
         editField.setText(currentTextField->text());
     }, editAction);
@@ -84,7 +103,7 @@ std::vector<typename Wt::Dbo::dbo_traits<T>::IdType> populateComboBox(Database& 
 }
 
 template <class T>
-void populateTable(Database& db, Wt::WTable& table, std::function<std::vector<Wt::WString>(const Wt::Dbo::ptr<T>& element, int row)> fieldLayoutMapper,
+void populateTable(Database& db, Wt::WTable& table, std::function<std::vector<std::pair<std::wstring, Wt::WString>>(const Wt::Dbo::ptr<T>& element, int row)> fieldLayoutMapper,
                    std::function<bool(const Wt::Dbo::ptr<T>& element)> filter = [](const Wt::Dbo::ptr<T>&) { return true; }) {
     while (table.rowCount() != table.headerCount()) {
         table.deleteRow(table.rowCount() - 1);
@@ -93,22 +112,25 @@ void populateTable(Database& db, Wt::WTable& table, std::function<std::vector<Wt
     auto transaction = Wt::Dbo::Transaction{db};
     auto records = Wt::Dbo::collection<Wt::Dbo::ptr<T>>{db.find<T>()};
 
+    if (table.headerCount() == 0)
+        table.setHeaderCount(1);
+
     auto row = table.headerCount();
     for (auto& record : records) {
         if (filter(record)) {
             auto mapping = fieldLayoutMapper(record, row);
             for (auto i = 0u; i < mapping.size(); i++) {
-                table.elementAt(row, i)->addWidget(new Wt::WText(std::move(mapping[i])));
+                auto column = findColumn(table, mapping[i].first);
+                if (column == -1) {
+                    table.elementAt(0, table.columnCount())->addWidget(new Wt::WText(mapping[i].first));
+                    column = table.columnCount() - 1;
+                }
+
+                table.elementAt(row, column)->addWidget(new Wt::WText(std::move(mapping[i].second)));
             }
             row++;
         }
     }
-}
-
-template <class... String>
-void populateTableHeader(Wt::WTable& table, const String&... contents) {
-    table.setHeaderCount(1);
-    populateTableHeaderImpl(table, 0, contents...);
 }
 
 template <class T, class String>
@@ -118,3 +140,21 @@ T* createLabeledField(String labelText, Wt::WContainerWidget* parent) {
     label->setBuddy(lineEdit);
     return lineEdit;
 }
+
+namespace {
+void populateTableHeaderImpl(Wt::WTable&, int) {
+}
+
+template <class HeadString, class... String>
+void populateTableHeaderImpl(Wt::WTable& table, int column, const HeadString& head, const String&... tail) {
+    table.elementAt(0, column)->addWidget(new Wt::WText(head));
+    populateTableHeaderImpl(table, column + 1, tail...);
+}
+}
+
+template <class... String>
+void populateTableHeader(Wt::WTable& table, const String&... contents) {
+    table.setHeaderCount(1);
+    populateTableHeaderImpl(table, 0, contents...);
+}
+

@@ -13,6 +13,17 @@
 #include "Recipe.h"
 
 class IngredientsWidget : public Wt::WContainerWidget {
+    const std::wstring colName = L"Nazwa";
+    const std::wstring colKcal = L"Kaloryczność";
+    const std::wstring colFats = L"Tłuszcze";
+    const std::wstring colSatAcids = L"Kwasy nasycone";
+    const std::wstring colCarbs = L"Węglowodany";
+    const std::wstring colSugar = L"Cukry";
+    const std::wstring colProtein = L"Białka";
+    const std::wstring colSalt = L"Sól";
+    const std::wstring colUnit = L"Jednostka";
+    const std::wstring colPrice = L"Cena";
+    const std::wstring colDelete = L"Usuń";
    public:
     IngredientsWidget(Wt::WContainerWidget*, Database& db) {
         this->db = &db;
@@ -21,13 +32,6 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
         ingredientList = std::make_unique<Wt::WTable>(this);
         ingredientList->addStyleClass("table table-stripped table-bordered");
-
-        if(this->db->users->find(this->db->login.user())->user()->accessLevel == 0)
-            populateTableHeader(*ingredientList, "Nazwa", "Energia", L"Tłuszcz", "Kwasy nasycone",
-                                L"Węglowodany", "Cukry", L"Białko", L"Sól", L"Jednostka", L"Usuń");
-        else
-            populateTableHeader(*ingredientList, "Nazwa", "Cena", "Energia", L"Tłuszcz", "Kwasy nasycone",
-                                L"Węglowodany", "Cukry", L"Białko", L"Sól", "Jednostka", L"Usuń");
         populateIngredientList();
     }
 
@@ -144,20 +148,27 @@ class IngredientsWidget : public Wt::WContainerWidget {
             rowToID.insert(std::make_pair(row, ingredient.id()));
             auto transaction = Wt::Dbo::Transaction{*db};
 
+            std::vector<std::pair<std::wstring, Wt::WString>> columns;
+
             Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(ingredient->unitID);
             auto unitName = unit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? unit->name : L"Błędna jednostka";
 
-            if(this->db->users->find(this->db->login.user())->user()->accessLevel == 0)
-                return std::vector<Wt::WString>{ingredient->name, std::to_string(ingredient->kcal),
-                    std::to_string(ingredient->fat), std::to_string(ingredient->saturatedAcids),
-                    std::to_string(ingredient->carbohydrates), std::to_string(ingredient->sugar),
-                    std::to_string(ingredient->protein), std::to_string(ingredient->salt), unitName, "X"};
+            columns.emplace_back(colName, ingredient->name);
+            if(this->db->users->find(this->db->login.user())->user()->accessLevel !=  0)
+                columns.emplace_back(colPrice, std::to_string(ingredient->price));
 
-            return std::vector<Wt::WString>{ingredient->name, std::to_string(ingredient->kcal),
-                std::to_string(ingredient->fat), std::to_string(ingredient->saturatedAcids),
-                std::to_string(ingredient->carbohydrates), std::to_string(ingredient->sugar),
-                std::to_string(ingredient->protein), std::to_string(ingredient->salt),
-                std::to_string(ingredient->price), unitName, "X"};
+            columns.emplace_back(colKcal, std::to_string(ingredient->kcal));
+            columns.emplace_back(colFats, std::to_string(ingredient->fat));
+            columns.emplace_back(colSatAcids, std::to_string(ingredient->saturatedAcids));
+            columns.emplace_back(colCarbs, std::to_string(ingredient->carbohydrates));
+            columns.emplace_back(colSugar, std::to_string(ingredient->sugar));
+            columns.emplace_back(colProtein, std::to_string(ingredient->protein));
+            columns.emplace_back(colSalt, std::to_string(ingredient->salt));
+
+            columns.emplace_back(colUnit, unitName);
+            columns.emplace_back(colDelete, "X");
+
+            return columns;
         },
         [this](const Wt::Dbo::ptr<Ingredient>& ingredient) {
             Wt::Dbo::Transaction t{*db};
@@ -167,7 +178,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
     void makeTableEditable() {
         // make ingredient name editable
-        makeTextCellsInteractive(*ingredientList, 0, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colName, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WValidator(true).validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -179,7 +190,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make kcal editable
-        makeTextCellsInteractive(*ingredientList, 1, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colKcal, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WIntValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -191,7 +202,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make fat editable
-        makeTextCellsInteractive(*ingredientList, 2, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colFats, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WDoubleValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -203,7 +214,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make saturated acids editable
-        makeTextCellsInteractive(*ingredientList, 3, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colSatAcids, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WDoubleValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -215,7 +226,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make carbohydrates editable
-        makeTextCellsInteractive(*ingredientList, 4, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colCarbs, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WDoubleValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -227,7 +238,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make sugar editable
-        makeTextCellsInteractive(*ingredientList, 5, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colSugar, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WDoubleValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -239,7 +250,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make protein editable
-        makeTextCellsInteractive(*ingredientList, 6, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colProtein, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WDoubleValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -251,7 +262,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make salt editable
-        makeTextCellsInteractive(*ingredientList, 7, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colSalt, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             if (Wt::WDoubleValidator().validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -264,7 +275,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
         // make ingredient price editable
         if(this->db->users->find(this->db->login.user())->user()->accessLevel != 0)
-            makeTextCellsInteractive(*ingredientList, 8, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+            makeTextCellsInteractive(*ingredientList, colPrice, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
                 Wt::WDoubleValidator validator;
                 validator.setMandatory(true);
                 if (validator.validate(filledField.text()).state() != Wt::WValidator::Valid) {
@@ -280,10 +291,8 @@ class IngredientsWidget : public Wt::WContainerWidget {
         // make ingredient unit editable
         auto unitKeys = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Unit>::IdType>>();
         makeCellsInteractive<Wt::WComboBox>(
-            *ingredientList, (this->db->users->find(this->db->login.user())->user()->accessLevel == 0 ? 8 : 9),
-            [this, unitKeys](int row, Wt::WComboBox& editField) {
-                *unitKeys =
-                    populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },
+            *ingredientList, colUnit, [this, unitKeys](int row, Wt::WComboBox& editField) {
+                *unitKeys = populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },
                                            [this, row](Wt::Dbo::ptr<Unit> potentialUnit) {
                                                auto transaction = Wt::Dbo::Transaction(*db);
                                                auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(rowToID[row]);
@@ -313,7 +322,11 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
     void setupDeleteAction() {
         for (auto row = ingredientList->headerCount(); row < ingredientList->rowCount(); row++) {
-            ingredientList->elementAt(row, (this->db->users->find(this->db->login.user())->user()->accessLevel == 0 ? 9 : 10))->clicked().connect(std::bind([this, row] {
+            auto column = findColumn(*ingredientList, colDelete);
+            if (column == -1)
+                return;
+
+            ingredientList->elementAt(row, column)->clicked().connect(std::bind([this, row] {
                 auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia składnika");
                 auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
                 auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());

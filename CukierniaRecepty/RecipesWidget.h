@@ -11,6 +11,17 @@
 #include "database.h"
 
 class RecipesWidget : public Wt::WContainerWidget {
+    const std::wstring colName = L"Nazwa";
+    const std::wstring colKcal = L"Kaloryczność";
+    const std::wstring colFats = L"Tłuszcze";
+    const std::wstring colSatAcids = L"Kwasy nasycone";
+    const std::wstring colCarbs = L"Węglowodany";
+    const std::wstring colSugar = L"Cukry";
+    const std::wstring colProtein = L"Białka";
+    const std::wstring colSalt = L"Sól";
+    const std::wstring colCost = L"Koszt";
+    const std::wstring colDelete = L"Usuń";
+    const std::wstring colDetails = L"Szczegóły";
    public:
     RecipesWidget(Wt::WContainerWidget*, RecipeDetailsWidget& recipeDetails, Database& db) : recipeDetails(recipeDetails) {
         Wt::Dbo::Transaction t{db};
@@ -29,10 +40,6 @@ class RecipesWidget : public Wt::WContainerWidget {
         recipeList = std::make_unique<Wt::WTable>(this);
         recipeList->addStyleClass("table table-stripped table-bordered");
 
-        if(this->db->users->find(this->db->login.user())->user()->accessLevel == 0)
-            populateTableHeader(*recipeList, "Nazwa", L"Kaloryczność", L"Tłuszcze", L"Kwasy nasycone", L"Węglowodany", "Cukry", "Proteiny", L"Sól", L"Usuń", L"Szczegóły");
-        else
-            populateTableHeader(*recipeList, "Nazwa", L"Kaloryczność", L"Tłuszcze", L"Kwasy nasycone", L"Węglowodany", "Cukry", "Proteiny", L"Sól", "Koszt", L"Usuń", L"Szczegóły");
         populateRecipeList();
     }
 
@@ -183,8 +190,9 @@ class RecipesWidget : public Wt::WContainerWidget {
         populateTable<Recipe>(*db, *recipeList, [&](const Wt::Dbo::ptr<Recipe>& recipe, int row) {
             auto transaction = Wt::Dbo::Transaction{*db};
             rowToID.insert(std::make_pair(row, recipe.id()));
+            std::vector<std::pair<std::wstring, Wt::WString>> columns;
 
-            auto price = recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.price; });
+            auto cost = recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.price; });
             auto kcal = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.kcal; }));
             auto fat = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.fat; }));
             auto saturatedAcids = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.saturatedAcids; }));
@@ -193,18 +201,26 @@ class RecipesWidget : public Wt::WContainerWidget {
             auto protein = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.protein; }));
             auto salt = std::to_wstring(recipe->totalIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
 
-            std::vector<Wt::WString> columns{recipe->name, kcal, fat, saturatedAcids, carbohydrates, sugar, protein, salt};
-            if(db->users->find(db->login.user())->user()->accessLevel != 0) {
-                columns.push_back(price == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(price));
-            }
-            columns.push_back("X");
+            columns.emplace_back(colName, recipe->name);
+            if(db->users->find(db->login.user())->user()->accessLevel != 0)
+                columns.emplace_back(colCost, cost == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(cost));
+
+            columns.emplace_back(colKcal, kcal);
+            columns.emplace_back(colFats, fat);
+            columns.emplace_back(colSatAcids, saturatedAcids);
+            columns.emplace_back(colCarbs, carbohydrates);
+            columns.emplace_back(colSugar, sugar);
+            columns.emplace_back(colProtein, protein);
+            columns.emplace_back(colSalt, salt);
+
+            columns.emplace_back(colDelete, "X");
 
             return columns;
         }, filter);
     }
 
     void makeTableEditable() {
-        makeTextCellsInteractive(*recipeList, 0, [this](int row, const Wt::WLineEdit& editField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*recipeList, colName, [this](int row, const Wt::WLineEdit& editField, Wt::WString oldContent) {
             if (Wt::WValidator(true).validate(editField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -217,8 +233,12 @@ class RecipesWidget : public Wt::WContainerWidget {
     }
 
     void setupDeleteAction() {
+        auto column = findColumn(*recipeList, colDelete);
+        if (column == -1)
+            return;
+
         for (auto row = recipeList->headerCount(); row < recipeList->rowCount(); row++) {
-            recipeList->elementAt(row, recipeList->columnCount() - 2)->clicked().connect(std::bind([this, row] {
+            recipeList->elementAt(row, column)->clicked().connect(std::bind([this, row] {
                 auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia przepisu");
                 auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
                 auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());
@@ -230,7 +250,7 @@ class RecipesWidget : public Wt::WContainerWidget {
                 confirmationDialog->finished().connect(std::bind([this, confirmationDialog, row] {
                     if (confirmationDialog->result() != Wt::WDialog::Accepted)
                         return;
-                            
+
                     Wt::Dbo::Transaction transaction(*db);
 
                     auto recipe = (Wt::Dbo::ptr<Recipe>)db->find<Recipe>().where("id = ?").bind(rowToID[row]);
@@ -246,6 +266,13 @@ class RecipesWidget : public Wt::WContainerWidget {
     }
 
     void setupGotoDetails() {
+        auto column = findColumn(*recipeList, colDetails);
+        if (column == -1) {
+            column = recipeList->columnCount();
+            recipeList->setHeaderCount(1);
+            recipeList->elementAt(0, column)->addWidget(new Wt::WText(colDetails));
+        }
+
         for (auto row = recipeList->headerCount(); row < recipeList->rowCount(); row++) {
             auto link = new Wt::WAnchor(Wt::WLink(Wt::WLink::InternalPath, "/recipe"), L"Szczegóły");
             recipeList->elementAt(row, recipeList->columnCount() - 1)->addWidget(link);

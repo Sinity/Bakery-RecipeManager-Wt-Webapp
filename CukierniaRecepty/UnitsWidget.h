@@ -14,6 +14,10 @@
 #include "helpers.h"
 
 class UnitsWidget : public Wt::WContainerWidget {
+    const std::wstring colName = L"Nazwa";
+    const std::wstring colQuantity = L"Ilość";
+    const std::wstring colBaseUnit = L"Jednostka bazowa";
+    const std::wstring colDelete = L"Usuń";
    public:
     UnitsWidget(Wt::WContainerWidget*, Database& db) {
         this->db = &db;
@@ -23,7 +27,6 @@ class UnitsWidget : public Wt::WContainerWidget {
         unitList = std::make_unique<Wt::WTable>(this);
         unitList->addStyleClass("table table-stripped table-bordered");
 
-        populateTableHeader(*unitList, "Nazwa", L"Ilość", L"Jednostka bazowa", L"Usuń");
         populateUnitsList();
     }
 
@@ -110,7 +113,12 @@ class UnitsWidget : public Wt::WContainerWidget {
             Wt::Dbo::ptr<Unit> baseUnit = db->find<Unit>().where("id = ?").bind(unit->baseUnitID);
             auto baseUnitName = baseUnit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? baseUnit->name : L"Brak";
 
-            return std::vector<Wt::WString>{unit->name, std::to_string(unit->quantity), baseUnitName, "X"};
+            std::vector<std::pair<std::wstring, Wt::WString>> columns;
+            columns.emplace_back(colName, unit->name);
+            columns.emplace_back(colQuantity, std::to_string(unit->quantity));
+            columns.emplace_back(colBaseUnit, baseUnitName);
+            columns.emplace_back(colDelete, "X");
+            return columns;
         },
         [this](const Wt::Dbo::ptr<Unit>& unit) {
             Wt::Dbo::Transaction t{*db};
@@ -120,7 +128,7 @@ class UnitsWidget : public Wt::WContainerWidget {
 
     void makeTableEditable() {
         // setup editing name of unit
-        makeTextCellsInteractive(*unitList, 0, [&](int row, const Wt::WLineEdit& field, Wt::WString oldContent) {
+        makeTextCellsInteractive(*unitList, colName, [&](int row, const Wt::WLineEdit& field, Wt::WString oldContent) {
             if (Wt::WValidator(true).validate(field.text()).state() != Wt::WValidator::Valid) {
                 return oldContent;
             }
@@ -135,7 +143,7 @@ class UnitsWidget : public Wt::WContainerWidget {
         });
 
         // setup editing quantity of unit
-        makeTextCellsInteractive(*unitList, 1, [&](int row, const Wt::WLineEdit& field, Wt::WString oldContent) {
+        makeTextCellsInteractive(*unitList, colQuantity, [&](int row, const Wt::WLineEdit& field, Wt::WString oldContent) {
             Wt::WDoubleValidator validator;
             validator.setMandatory(true);
             if (validator.validate(field.text()).state() != Wt::WValidator::Valid) {
@@ -151,7 +159,7 @@ class UnitsWidget : public Wt::WContainerWidget {
         // setup editing base unit of unit
         auto unitKeys = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Unit>::IdType>>();
         makeCellsInteractive<Wt::WComboBox>(
-            *unitList, 2,
+            *unitList, colBaseUnit,
             [this, unitKeys](int row, Wt::WComboBox& editField) {
                 auto oldContent = (Wt::WText*)unitList->elementAt(row, 2)->widget(0);
                 auto oldUnitName = oldContent->text();
@@ -189,8 +197,12 @@ class UnitsWidget : public Wt::WContainerWidget {
     }
 
     void setupDeleteAction() {
+        auto column = findColumn(*unitList, colDelete);
+        if (column == -1)
+            return;
+
         for (auto row = unitList->headerCount(); row < unitList->rowCount(); row++) {
-            unitList->elementAt(row, 3)->clicked().connect(std::bind([this, row] {
+            unitList->elementAt(row, column)->clicked().connect(std::bind([this, row] {
                 auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia jednostki");
                 auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
                 auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());

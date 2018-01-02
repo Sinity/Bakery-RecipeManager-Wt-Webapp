@@ -13,6 +13,18 @@
 #include "Recipe.h"
 
 class RecipeDetailsWidget : public Wt::WContainerWidget {
+    const std::wstring colIngredient = L"Składnik";
+    const std::wstring colQuantity = L"Ilość";
+    const std::wstring colUnit = L"Jednostka";
+    const std::wstring colKcal = L"Kaloryczność";
+    const std::wstring colFats = L"Tłuszcze";
+    const std::wstring colSatAcids = L"Kwasy nasycone";
+    const std::wstring colCarbs = L"Węglowodany";
+    const std::wstring colSugar = L"Cukry";
+    const std::wstring colProtein = L"Białka";
+    const std::wstring colSalt = L"Sól";
+    const std::wstring colCost = L"Koszt";
+    const std::wstring colDelete = L"Usuń";
    public:
     RecipeDetailsWidget(Wt::WContainerWidget*, Database& db) {
         this->db = &db;
@@ -22,7 +34,6 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
         ingredientList = std::make_unique<Wt::WTable>(this);
         ingredientList->addStyleClass("table table-stripped table-bordered");
 
-        populateTableHeader(*ingredientList, "Skladnik", "Ilosc", "Jednostka", L"Usuń");
         populateIngredientList();
     }
 
@@ -122,28 +133,53 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
         rowToID.clear();
 
         populateTable<IngredientRecord>(*db, *ingredientList,
-                                        [&](const Wt::Dbo::ptr<IngredientRecord>& ingredientRecord, int row) {
-                                            rowToID.insert(std::make_pair(row, ingredientRecord.id()));
-                                            auto transaction = Wt::Dbo::Transaction{*db};
+            [&](const Wt::Dbo::ptr<IngredientRecord>& ingredientRecord, int row) {
+                rowToID.insert(std::make_pair(row, ingredientRecord.id()));
+                auto transaction = Wt::Dbo::Transaction{*db};
 
-                                            Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(ingredientRecord->unitID);
-                                            auto unitName = unit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? unit->name : L"Błędna jednostka";
+                std::vector<std::pair<std::wstring, Wt::WString>> columns;
 
-                                            Wt::Dbo::ptr<Ingredient> ingredient = db->find<Ingredient>().where("id = ?").bind(ingredientRecord->ingredientID);
-                                            auto ingredientName =
-                                                ingredient.id() != Wt::Dbo::dbo_traits<Ingredient>::invalidId() ? ingredient->name : L"Błędny skladnik";
+                Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(ingredientRecord->unitID);
+                auto unitName = unit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? unit->name : L"Błędna jednostka";
 
-                                            return std::vector<Wt::WString>{ingredientName, std::to_string(ingredientRecord->quantity), unitName, "X"};
+                Wt::Dbo::ptr<Ingredient> ingredient = db->find<Ingredient>().where("id = ?").bind(ingredientRecord->ingredientID);
+                auto ingredientName =
+                    ingredient.id() != Wt::Dbo::dbo_traits<Ingredient>::invalidId() ? ingredient->name : L"Błędny skladnik";
 
-                                        },
-                                        [this](const Wt::Dbo::ptr<IngredientRecord>& element) { return element->recipe.id() == currentRecipe; });
+                auto cost = ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.price; });
+                auto kcal = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.kcal; }));
+                auto fat = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.fat; }));
+                auto saturatedAcids = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.saturatedAcids; }));
+                auto carbohydrates = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.carbohydrates; }));
+                auto sugar = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.sugar; }));
+                auto protein = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.protein; }));
+                auto salt = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
+
+                columns.emplace_back(colIngredient, ingredientName);
+                columns.emplace_back(colQuantity, std::to_string(ingredientRecord->quantity));
+                columns.emplace_back(colUnit, unitName);
+                if(db->users->find(db->login.user())->user()->accessLevel != 0)
+                    columns.emplace_back(colCost, cost == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(cost));
+
+                columns.emplace_back(colKcal, kcal);
+                columns.emplace_back(colFats, fat);
+                columns.emplace_back(colSatAcids, saturatedAcids);
+                columns.emplace_back(colCarbs, carbohydrates);
+                columns.emplace_back(colSugar, sugar);
+                columns.emplace_back(colProtein, protein);
+                columns.emplace_back(colSalt, salt);
+
+                columns.emplace_back(colDelete, "X");
+                return columns;
+            },
+            [this](const Wt::Dbo::ptr<IngredientRecord>& element) { return element->recipe.id() == currentRecipe; });
     }
 
     void makeTableEditable() {
         // make ingredient field editable
         auto ingredientKeys = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Ingredient>::IdType>>();
         makeCellsInteractive<Wt::WComboBox>(
-            *ingredientList, 0,
+            *ingredientList, colIngredient,
             [this, ingredientKeys](int row, Wt::WComboBox& editField) {
                 *ingredientKeys = populateComboBox<Ingredient>(*db, editField, [](const Ingredient& ingredient) { return ingredient.name; });
 
@@ -163,7 +199,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
             });
 
         // make ingredient quantity editable
-        makeTextCellsInteractive(*ingredientList, 1, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
+        makeTextCellsInteractive(*ingredientList, colQuantity, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
             Wt::WDoubleValidator validator;
             validator.setMandatory(true);
             if (validator.validate(filledField.text()).state() != Wt::WValidator::Valid) {
@@ -179,7 +215,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
         // make ingredient unit editable
         auto unitKeys = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Unit>::IdType>>();
         makeCellsInteractive<Wt::WComboBox>(
-            *ingredientList, 2,
+            *ingredientList, colUnit,
             [this, unitKeys](int row, Wt::WComboBox& editField) {
                 *unitKeys = populateComboBox<Unit>(
                     *db, editField, [](const Unit& unit) { return unit.name; },
@@ -211,8 +247,12 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
     }
 
     void setupDeleteAction() {
+        auto column = findColumn(*ingredientList, colDelete);
+        if (column == -1)
+            return;
+
         for (auto row = ingredientList->headerCount(); row < ingredientList->rowCount(); row++) {
-            ingredientList->elementAt(row, 3)->clicked().connect(std::bind([this, row] {
+            ingredientList->elementAt(row, column)->clicked().connect(std::bind([this, row] {
                 auto confirmationDialog = new Wt::WDialog(L"Potwierdzenie usunięcia składnika przepisu");
                 auto yesButton = new Wt::WPushButton("Tak", confirmationDialog->footer());
                 auto noButton = new Wt::WPushButton("Nie", confirmationDialog->footer());
@@ -224,7 +264,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                 confirmationDialog->finished().connect(std::bind([this, confirmationDialog, row] {
                     if (confirmationDialog->result() != Wt::WDialog::Accepted)
                         return;
-                            
+
                     Wt::Dbo::Transaction transaction(*db);
 
                     auto ingredientRecord = (Wt::Dbo::ptr<IngredientRecord>)db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
