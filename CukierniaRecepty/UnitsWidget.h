@@ -19,10 +19,11 @@ class UnitsWidget : public Wt::WContainerWidget {
     const std::wstring colBaseUnit = L"Jednostka bazowa";
     const std::wstring colDelete = L"Usuń";
    public:
-    UnitsWidget(Wt::WContainerWidget*, Database& db) {
-        this->db = &db;
-        addButton = std::make_unique<Wt::WPushButton>(L"Dodaj jednostkę", this);
-        addButton->clicked().connect(this, &UnitsWidget::showAddDialog);
+    UnitsWidget(Wt::WContainerWidget*, Database& db) : db(&db) {
+        if(db.users->find(db.login.user())->user()->accessLevel != 0) {
+            addButton = std::make_unique<Wt::WPushButton>(L"Dodaj jednostkę", this);
+            addButton->clicked().connect(this, &UnitsWidget::showAddDialog);
+        }
 
         unitList = std::make_unique<Wt::WTable>(this);
         unitList->addStyleClass("table table-stripped table-bordered");
@@ -32,8 +33,11 @@ class UnitsWidget : public Wt::WContainerWidget {
 
     void populateUnitsList() {
         populateUnitsTable();
-        makeTableEditable();
-        setupDeleteAction();
+
+        if(db->users->find(db->login.user())->user()->accessLevel != 0) {
+            makeTableEditable();
+            setupDeleteAction();
+        }
     }
 
    private:
@@ -115,14 +119,17 @@ class UnitsWidget : public Wt::WContainerWidget {
 
             std::vector<std::pair<std::wstring, Wt::WString>> columns;
             columns.emplace_back(colName, unit->name);
-            columns.emplace_back(colQuantity, std::to_string(unit->quantity));
             columns.emplace_back(colBaseUnit, baseUnitName);
-            columns.emplace_back(colDelete, "X");
+            columns.emplace_back(colQuantity, std::to_string(unit->quantity));
+
+            if(db->users->find(db->login.user())->user()->accessLevel != 0)
+                columns.emplace_back(colDelete, "X");
+
             return columns;
         },
         [this](const Wt::Dbo::ptr<Unit>& unit) {
             Wt::Dbo::Transaction t{*db};
-            return unit->ownerID == this->db->users->find(db->login.user())->user()->firmID;
+            return unit->ownerID == db->users->find(db->login.user())->user()->firmID;
         });
     }
 

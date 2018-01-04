@@ -26,15 +26,14 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
     const std::wstring colCost = L"Koszt";
     const std::wstring colDelete = L"Usuń";
    public:
-    RecipeDetailsWidget(Wt::WContainerWidget*, Database& db) {
-        this->db = &db;
-        addButton = std::make_unique<Wt::WPushButton>(L"Dodaj składnik", this);
-        addButton->clicked().connect(this, &RecipeDetailsWidget::showAddDialog);
+    RecipeDetailsWidget(Wt::WContainerWidget*, Database& db) : db(&db) {
+        if(db.users->find(db.login.user())->user()->accessLevel != 0) {
+            addButton = std::make_unique<Wt::WPushButton>(L"Dodaj składnik", this);
+            addButton->clicked().connect(this, &RecipeDetailsWidget::showAddDialog);
+        }
 
         ingredientList = std::make_unique<Wt::WTable>(this);
         ingredientList->addStyleClass("table table-stripped table-bordered");
-
-        populateIngredientList();
     }
 
     void setRecipe(Wt::Dbo::dbo_traits<Recipe>::IdType recipeID) {
@@ -48,16 +47,19 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
         }
 
         populateIngredientTable();
-        makeTableEditable();
-        setupDeleteAction();
+
+        if(db->users->find(db->login.user())->user()->accessLevel != 0) {
+            makeTableEditable();
+            setupDeleteAction();
+        }
     }
 
+    Wt::Dbo::dbo_traits<Recipe>::IdType currentRecipe = Wt::Dbo::dbo_traits<Recipe>::invalidId();
    private:
     Database* db;
     std::unique_ptr<Wt::WTable> ingredientList;
     std::unordered_map<int, Wt::Dbo::dbo_traits<IngredientRecord>::IdType> rowToID;
     std::unique_ptr<Wt::WPushButton> addButton;
-    Wt::Dbo::dbo_traits<Recipe>::IdType currentRecipe;
 
     void showAddDialog() {
         Wt::WDialog* dialog = new Wt::WDialog(L"Dodaj składnik");
@@ -129,14 +131,24 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
         dialog->show();
     }
 
+    void updateColumn(const std::wstring& colName, int row, const Wt::WString& newContent) {
+        for(auto i = 0; i < ingredientList->columnCount(); i++) {
+            auto currColName = ((Wt::WText*)ingredientList->elementAt(0, i)->widget(0))->text();
+            if (currColName == colName) {
+                auto elem = (Wt::WText*)ingredientList->elementAt(row, i)->widget(0);
+                elem->setText(newContent);
+                return;
+            }
+        }
+    }
+
     void populateIngredientTable() {
         rowToID.clear();
 
         populateTable<IngredientRecord>(*db, *ingredientList,
             [&](const Wt::Dbo::ptr<IngredientRecord>& ingredientRecord, int row) {
-                rowToID.insert(std::make_pair(row, ingredientRecord.id()));
                 auto transaction = Wt::Dbo::Transaction{*db};
-
+                rowToID.insert(std::make_pair(row, ingredientRecord.id()));
                 std::vector<std::pair<std::wstring, Wt::WString>> columns;
 
                 Wt::Dbo::ptr<Unit> unit = db->find<Unit>().where("id = ?").bind(ingredientRecord->unitID);
@@ -156,8 +168,8 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                 auto salt = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
 
                 columns.emplace_back(colIngredient, ingredientName);
-                columns.emplace_back(colQuantity, std::to_string(ingredientRecord->quantity));
                 columns.emplace_back(colUnit, unitName);
+                columns.emplace_back(colQuantity, std::to_string(ingredientRecord->quantity));
                 if(db->users->find(db->login.user())->user()->accessLevel != 0)
                     columns.emplace_back(colCost, cost == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(cost));
 
@@ -169,19 +181,24 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                 columns.emplace_back(colProtein, protein);
                 columns.emplace_back(colSalt, salt);
 
-                columns.emplace_back(colDelete, "X");
+                if(db->users->find(db->login.user())->user()->accessLevel != 0)
+                    columns.emplace_back(colDelete, "X");
                 return columns;
             },
-            [this](const Wt::Dbo::ptr<IngredientRecord>& element) { return element->recipe.id() == currentRecipe; });
+            [&](const Wt::Dbo::ptr<IngredientRecord>& element) {
+                Wt::Dbo::Transaction t{*db};
+                return element->recipe.id() == currentRecipe; 
+            });
     }
 
     void makeTableEditable() {
-        // make ingredient field editable
+         // make ingredient field editable
         auto ingredientKeys = std::make_shared<std::vector<Wt::Dbo::dbo_traits<Ingredient>::IdType>>();
         makeCellsInteractive<Wt::WComboBox>(
             *ingredientList, colIngredient,
             [this, ingredientKeys](int row, Wt::WComboBox& editField) {
-                *ingredientKeys = populateComboBox<Ingredient>(*db, editField, [](const Ingredient& ingredient) { return ingredient.name; });
+                *ingredientKeys = populateComboBox<Ingredient>(*db, editField, [](const Ingredient& ingredient) { return ingredient.name; },
+                    [this](const Wt::Dbo::ptr<Ingredient>& elem) { return elem->ownerID == db->users->find(db->login.user())->user()->firmID; });
 
                 auto oldContent = (Wt::WText*)ingredientList->elementAt(row, 0)->widget(0);
                 auto oldIngredientName = oldContent->text();
@@ -193,7 +210,27 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
 
                 auto ingredientRecord = (Wt::Dbo::ptr<IngredientRecord>)db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
                 auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind((*ingredientKeys)[filledEditField.currentIndex()]);
-                ingredientRecord.modify()->ingredientID = ingredient.id();
+                if (ingredient.id() != ingredientRecord->ingredientID) {
+                    ingredientRecord.modify()->ingredientID = ingredient.id();
+
+                    auto cost = ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.price; });
+                    auto kcal = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.kcal; }));
+                    auto fat = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.fat; }));
+                    auto saturatedAcids = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.saturatedAcids; }));
+                    auto carbohydrates = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.carbohydrates; }));
+                    auto sugar = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.sugar; }));
+                    auto protein = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.protein; }));
+                    auto salt = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
+
+                    updateColumn(colCost, row, cost == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(cost));
+                    updateColumn(colKcal, row, kcal);
+                    updateColumn(colFats, row, fat);
+                    updateColumn(colSatAcids, row, saturatedAcids);
+                    updateColumn(colCarbs, row, carbohydrates);
+                    updateColumn(colSugar, row, sugar);
+                    updateColumn(colProtein, row, protein);
+                    updateColumn(colSalt, row, salt);
+                }
 
                 return filledEditField.currentText();
             });
@@ -205,10 +242,30 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
             if (validator.validate(filledField.text()).state() != Wt::WValidator::Valid) {
                 return oldContent.narrow();
             }
-
             Wt::Dbo::Transaction transaction(*db);
             Wt::Dbo::ptr<IngredientRecord> ingredientRecord = db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
-            ingredientRecord.modify()->quantity = std::stod(filledField.text());
+            if (std::stod(filledField.text()) != ingredientRecord->quantity) {
+                ingredientRecord.modify()->quantity = std::stod(filledField.text());
+
+                auto cost = ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.price; });
+                auto kcal = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.kcal; }));
+                auto fat = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.fat; }));
+                auto saturatedAcids = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.saturatedAcids; }));
+                auto carbohydrates = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.carbohydrates; }));
+                auto sugar = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.sugar; }));
+                auto protein = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.protein; }));
+                auto salt = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
+
+                updateColumn(colCost, row, cost == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(cost));
+                updateColumn(colKcal, row, kcal);
+                updateColumn(colFats, row, fat);
+                updateColumn(colSatAcids, row, saturatedAcids);
+                updateColumn(colCarbs, row, carbohydrates);
+                updateColumn(colSugar, row, sugar);
+                updateColumn(colProtein, row, protein);
+                updateColumn(colSalt, row, salt);
+            }
+
             return std::to_string(ingredientRecord->quantity);
         });
 
@@ -240,7 +297,28 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
 
                 auto ingredientRecord = (Wt::Dbo::ptr<IngredientRecord>)db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
                 auto unit = (Wt::Dbo::ptr<Unit>)db->find<Unit>().where("id = ?").bind((*unitKeys)[filledEditField.currentIndex()]);
-                ingredientRecord.modify()->unitID = unit.id();
+
+                if (ingredientRecord->unitID != unit.id()) {
+                    ingredientRecord.modify()->unitID = unit.id();
+
+                    auto cost = ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.price; });
+                    auto kcal = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.kcal; }));
+                    auto fat = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.fat; }));
+                    auto saturatedAcids = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.saturatedAcids; }));
+                    auto carbohydrates = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.carbohydrates; }));
+                    auto sugar = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.sugar; }));
+                    auto protein = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.protein; }));
+                    auto salt = std::to_wstring(ingredientRecord->scaledIngredientValue(*db, [](const Ingredient& i) { return i.salt; }));
+
+                    updateColumn(colCost, row, cost == -1 ? L"Błąd, nie można obliczyć kosztu" : std::to_wstring(cost));
+                    updateColumn(colKcal, row, kcal);
+                    updateColumn(colFats, row, fat);
+                    updateColumn(colSatAcids, row, saturatedAcids);
+                    updateColumn(colCarbs, row, carbohydrates);
+                    updateColumn(colSugar, row, sugar);
+                    updateColumn(colProtein, row, protein);
+                    updateColumn(colSalt, row, salt);
+                }
 
                 return filledEditField.currentText();
             });

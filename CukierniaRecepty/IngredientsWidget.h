@@ -25,10 +25,11 @@ class IngredientsWidget : public Wt::WContainerWidget {
     const std::wstring colPrice = L"Cena";
     const std::wstring colDelete = L"Usuń";
    public:
-    IngredientsWidget(Wt::WContainerWidget*, Database& db) {
-        this->db = &db;
-        addButton = std::make_unique<Wt::WPushButton>(L"Dodaj składnik", this);
-        addButton->clicked().connect(this, &IngredientsWidget::showAddDialog);
+    IngredientsWidget(Wt::WContainerWidget*, Database& db) : db(&db) {
+        if(db.users->find(db.login.user())->user()->accessLevel !=  0) {
+            addButton = std::make_unique<Wt::WPushButton>(L"Dodaj składnik", this);
+            addButton->clicked().connect(this, &IngredientsWidget::showAddDialog);
+        }
 
         ingredientList = std::make_unique<Wt::WTable>(this);
         ingredientList->addStyleClass("table table-stripped table-bordered");
@@ -37,8 +38,10 @@ class IngredientsWidget : public Wt::WContainerWidget {
 
     void populateIngredientList() {
         populateIngredientTable();
-        makeTableEditable();
-        setupDeleteAction();
+        if(db->users->find(db->login.user())->user()->accessLevel !=  0) {
+            makeTableEditable();
+            setupDeleteAction();
+        }
     }
 
    private:
@@ -154,7 +157,8 @@ class IngredientsWidget : public Wt::WContainerWidget {
             auto unitName = unit.id() != Wt::Dbo::dbo_traits<Unit>::invalidId() ? unit->name : L"Błędna jednostka";
 
             columns.emplace_back(colName, ingredient->name);
-            if(this->db->users->find(this->db->login.user())->user()->accessLevel !=  0)
+            columns.emplace_back(colUnit, unitName);
+            if(db->users->find(db->login.user())->user()->accessLevel !=  0)
                 columns.emplace_back(colPrice, std::to_string(ingredient->price));
 
             columns.emplace_back(colKcal, std::to_string(ingredient->kcal));
@@ -165,14 +169,14 @@ class IngredientsWidget : public Wt::WContainerWidget {
             columns.emplace_back(colProtein, std::to_string(ingredient->protein));
             columns.emplace_back(colSalt, std::to_string(ingredient->salt));
 
-            columns.emplace_back(colUnit, unitName);
-            columns.emplace_back(colDelete, "X");
+            if(db->users->find(db->login.user())->user()->accessLevel !=  0)
+                columns.emplace_back(colDelete, "X");
 
             return columns;
         },
         [this](const Wt::Dbo::ptr<Ingredient>& ingredient) {
             Wt::Dbo::Transaction t{*db};
-            return ingredient->ownerID == this->db->users->find(db->login.user())->user()->firmID;
+            return ingredient->ownerID == db->users->find(db->login.user())->user()->firmID;
         });
     }
 
@@ -274,7 +278,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
         });
 
         // make ingredient price editable
-        if(this->db->users->find(this->db->login.user())->user()->accessLevel != 0)
+        if(db->users->find(db->login.user())->user()->accessLevel != 0)
             makeTextCellsInteractive(*ingredientList, colPrice, [&](int row, const Wt::WLineEdit& filledField, Wt::WString oldContent) {
                 Wt::WDoubleValidator validator;
                 validator.setMandatory(true);

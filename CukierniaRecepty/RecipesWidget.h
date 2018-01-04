@@ -5,6 +5,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WBreak>
 #include <Wt/WDialog>
+#include <Wt/WApplication>
 #include "Recipe.h"
 #include "RecipeDetailsWidget.h"
 #include "helpers.h"
@@ -23,15 +24,19 @@ class RecipesWidget : public Wt::WContainerWidget {
     const std::wstring colDelete = L"Usuń";
     const std::wstring colDetails = L"Szczegóły";
    public:
-    RecipesWidget(Wt::WContainerWidget*, RecipeDetailsWidget& recipeDetails, Database& db) : recipeDetails(recipeDetails) {
+    Wt::Dbo::dbo_traits<Recipe>::IdType currentRecipe = Wt::Dbo::dbo_traits<Recipe>::invalidId();
+
+    RecipesWidget(Wt::WContainerWidget*, Database& db) : db(&db) {
         Wt::Dbo::Transaction t{db};
-        this->db = &db;
-        addButton = std::make_unique<Wt::WPushButton>("Dodaj przepis", this);
-        addButton->clicked().connect(this, &RecipesWidget::showAddDialog);
+        if(db.users->find(db.login.user())->user()->accessLevel != 0) {
+            addButton = std::make_unique<Wt::WPushButton>("Dodaj przepis", this);
+            addButton->clicked().connect(this, &RecipesWidget::showAddDialog);
+        }
 
         addWidget(new Wt::WBreak);
-        addWidget(new Wt::WLabel("Filtr"));
+        addWidget(new Wt::WLabel("Filtr: "));
         filter = std::make_unique<Wt::WLineEdit>(this);
+        filter->setTextSize(filter->text().value().length() + 1);
         filter->setPlaceholderText(L"Część nazwy szukanego przepisu");
         filter->enterPressed().connect(std::bind([this] {
             populateRecipeList();
@@ -47,11 +52,14 @@ class RecipesWidget : public Wt::WContainerWidget {
         populateRecipeTable([this](const Wt::Dbo::ptr<Recipe>& recipe) {
             Wt::Dbo::Transaction t{*db};
             auto recipeName = std::wstring(recipe->name);
-            return recipe->ownerID == this->db->users->find(db->login.user())->user()->firmID && recipeName.find(filter->text()) != std::wstring::npos;
+            return recipe->ownerID == db->users->find(db->login.user())->user()->firmID && recipeName.find(filter->text()) != std::wstring::npos;
         });
 
-        makeTableEditable();
-        setupDeleteAction();
+        if(db->users->find(db->login.user())->user()->accessLevel != 0) {
+            makeTableEditable();
+            setupDeleteAction();
+        }
+
         setupGotoDetails();
     }
 
@@ -62,7 +70,6 @@ class RecipesWidget : public Wt::WContainerWidget {
     std::unique_ptr<Wt::WTable> recipeList;
     std::unordered_map<int, Wt::Dbo::dbo_traits<Recipe>::IdType> rowToID;
     std::unique_ptr<Wt::WPushButton> addButton;
-    RecipeDetailsWidget& recipeDetails;
 
     void showAddDialog() {
         Wt::WDialog* dialog = new Wt::WDialog("Dodaj przepis");
@@ -213,7 +220,8 @@ class RecipesWidget : public Wt::WContainerWidget {
             columns.emplace_back(colProtein, protein);
             columns.emplace_back(colSalt, salt);
 
-            columns.emplace_back(colDelete, "X");
+            if(db->users->find(db->login.user())->user()->accessLevel != 0)
+                columns.emplace_back(colDelete, "X");
 
             return columns;
         }, filter);
@@ -275,8 +283,9 @@ class RecipesWidget : public Wt::WContainerWidget {
 
         for (auto row = recipeList->headerCount(); row < recipeList->rowCount(); row++) {
             auto link = new Wt::WAnchor(Wt::WLink(Wt::WLink::InternalPath, "/recipe"), L"Szczegóły");
+            link->clicked().connect(std::bind([row, this] { currentRecipe = rowToID[row]; }));
+
             recipeList->elementAt(row, recipeList->columnCount() - 1)->addWidget(link);
-            link->clicked().connect(std::bind([this, row] { recipeDetails.setRecipe(rowToID[row]); }));
         }
     }
 };

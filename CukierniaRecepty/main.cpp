@@ -65,6 +65,7 @@ class App : public Wt::WApplication {
             } else if (internalPath() == "/wyloguj") {
                 db.login.logout();
             } else if (internalPath() == "/recipe") {
+                recipeDetails->setRecipe(recipes->currentRecipe);
                 content->setCurrentWidget(recipeDetails.get());
                 menu->select(-1);
             }
@@ -119,7 +120,7 @@ class App : public Wt::WApplication {
                 Wt::log("notice") << db.users->find(db.login.user())->user().id() << " logged in!";
 
                 recipeDetails = std::make_unique<RecipeDetailsWidget>(content.get(), db);
-                recipes = std::make_unique<RecipesWidget>(content.get(), *recipeDetails, db);
+                recipes = std::make_unique<RecipesWidget>(content.get(), db);
                 ingredients = std::make_unique<IngredientsWidget>(content.get(), db);
                 units = std::make_unique<UnitsWidget>(content.get(), db);
 
