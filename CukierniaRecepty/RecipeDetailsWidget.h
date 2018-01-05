@@ -81,12 +81,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                                               [this, ingredientID](Wt::Dbo::ptr<Unit> potentialUnit) {
                                                   auto transaction = Wt::Dbo::Transaction(*db);
                                                   auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(ingredientID);
-
-                                                  if (ingredient->unitID == potentialUnit.id() || Unit::isDescended(*db, ingredient->unitID, potentialUnit.id()) ||
-                                                      Unit::isDescended(*db, potentialUnit.id(), ingredient->unitID)) {
-                                                      return true;
-                                                  }
-                                                  return false;
+                                                  return Unit::sameBranch(*db, potentialUnit.id(), ingredient->unitID);
                                               });
         }));
 
@@ -279,12 +274,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                     [this, row](Wt::Dbo::ptr<Unit> potentialUnit) {
                         auto transaction = Wt::Dbo::Transaction(*db);
                         auto ingredientRecord = (Wt::Dbo::ptr<IngredientRecord>)db->find<IngredientRecord>().where("id = ?").bind(rowToID[row]);
-
-                        if (ingredientRecord->unitID == potentialUnit.id() || Unit::isDescended(*db, ingredientRecord->unitID, potentialUnit.id()) ||
-                            Unit::isDescended(*db, potentialUnit.id(), ingredientRecord->unitID)) {
-                            return true;
-                        }
-                        return false;
+                        return Unit::sameBranch(*db, potentialUnit.id(), ingredientRecord->unitID);
                     });
 
                 auto oldContent = (Wt::WText*)ingredientList->elementAt(row, 2)->widget(0);

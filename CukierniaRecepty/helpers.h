@@ -39,10 +39,8 @@ void makeCellsInteractive(Wt::WTable& table, const std::wstring& colName, std::f
     for (auto row = table.headerCount(); row < table.rowCount(); row++) {
         table.elementAt(row, column)->clicked().connect(std::bind([=, &table] {
                 auto elem = dynamic_cast<Wt::WText*>(table.elementAt(row, column)->widget(0));
-                if (!elem) {
-                    Wt::log("error") << "makeCellsInteractive(): one of cells contains something other than Wt::WText";
+                if (!elem)
                     return;
-                }
 
                 auto oldContent = elem->text();
 

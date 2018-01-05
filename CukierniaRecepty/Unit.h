@@ -47,4 +47,28 @@ class Unit {
         Wt::Dbo::ptr<Unit> potentialChild = db.find<Unit>().where("id = ?").bind(potentialChildID);
         return isDescended(db, potentialChild->baseUnitID, potentialParentID);
     }
+
+    static bool sameBranch(Database& db, Wt::Dbo::dbo_traits<Unit>::IdType unit1, Wt::Dbo::dbo_traits<Unit>::IdType unit2) {
+        auto transaction = Wt::Dbo::Transaction(db);
+        auto baseUnit1 = unit1;
+        auto baseUnit2 = unit2;
+
+        auto currentID = unit1;
+        while (currentID != Wt::Dbo::dbo_traits<Unit>::invalidId()) {
+            baseUnit1 = currentID;
+
+            Wt::Dbo::ptr<Unit> currentUnit = db.find<Unit>().where("id = ?").bind(currentID);
+            currentID = currentUnit->baseUnitID;
+        }
+
+        currentID = unit2;
+        while (currentID != Wt::Dbo::dbo_traits<Unit>::invalidId()) {
+            baseUnit2 = currentID;
+
+            Wt::Dbo::ptr<Unit> currentUnit = db.find<Unit>().where("id = ?").bind(currentID);
+            currentID = currentUnit->baseUnitID;
+        }
+
+        return baseUnit1 == baseUnit2;
+    }
 };

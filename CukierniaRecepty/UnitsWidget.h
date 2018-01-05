@@ -171,18 +171,11 @@ class UnitsWidget : public Wt::WContainerWidget {
                 auto oldContent = (Wt::WText*)unitList->elementAt(row, 2)->widget(0);
                 auto oldUnitName = oldContent->text();
 
-                auto unitIDs =
-                    populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },
-                                           [this, row](Wt::Dbo::ptr<Unit> potentialNewUnit) {
-                                               auto transaction = Wt::Dbo::Transaction(*db);
-                                               Wt::Dbo::ptr<Unit> currentUnit = db->find<Unit>().where("id = ?").bind(rowToID[row]);
-                                               if (potentialNewUnit.id() == currentUnit.id() || Unit::isDescended(*db, potentialNewUnit.id(), currentUnit.id())) {
-                                                   return false;
-                                               }
-                                               return true;
-                                           });
+                *unitKeys = populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },
+                   [this, row](Wt::Dbo::ptr<Unit> potentialNewUnit) {
+                       return potentialNewUnit.id() != rowToID[row] && Unit::sameBranch(*db, potentialNewUnit.id(), rowToID[row]);
+                   });
 
-                *unitKeys = std::vector<Wt::Dbo::dbo_traits<Unit>::IdType>{std::move(unitIDs)};
                 unitKeys->insert(unitKeys->begin(), Wt::Dbo::dbo_traits<Unit>::invalidId());
 
                 editField.insertItem(0, "Brak");

@@ -113,12 +113,7 @@ class RecipesWidget : public Wt::WContainerWidget {
                                               [this, ingredientID](Wt::Dbo::ptr<Unit> potentialUnit) {
                                                   auto transaction = Wt::Dbo::Transaction(*db);
                                                   auto ingredient = (Wt::Dbo::ptr<Ingredient>)db->find<Ingredient>().where("id = ?").bind(ingredientID);
-
-                                                  if (ingredient->unitID == potentialUnit.id() || Unit::isDescended(*db, ingredient->unitID, potentialUnit.id()) ||
-                                                      Unit::isDescended(*db, potentialUnit.id(), ingredient->unitID)) {
-                                                      return true;
-                                                  }
-                                                  return false;
+                                                  return Unit::sameBranch(*db, potentialUnit.id(), ingredient->unitID);
                                               });
         }));
 
