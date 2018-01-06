@@ -168,7 +168,7 @@ class UnitsWidget : public Wt::WContainerWidget {
         makeCellsInteractive<Wt::WComboBox>(
             *unitList, colBaseUnit,
             [this, unitKeys](int row, Wt::WComboBox& editField) {
-                auto oldContent = (Wt::WText*)unitList->elementAt(row, 2)->widget(0);
+                auto oldContent = (Wt::WText*)unitList->elementAt(row, findColumn(*unitList, colBaseUnit))->widget(0);
                 auto oldUnitName = oldContent->text();
 
                 *unitKeys = populateComboBox<Unit>(*db, editField, [](const Unit& unit) { return unit.name; },

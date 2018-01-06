@@ -303,7 +303,7 @@ class IngredientsWidget : public Wt::WContainerWidget {
                                                return Unit::sameBranch(*db, potentialUnit.id(), ingredient->unitID);
                                            });
 
-                auto oldContent = (Wt::WText*)ingredientList->elementAt(row, 2)->widget(0);
+                auto oldContent = (Wt::WText*)ingredientList->elementAt(row, findColumn(*ingredientList, colUnit))->widget(0);
                 auto oldUnitName = oldContent->text();
                 auto indexOfOldUnit = editField.findText(oldUnitName);
                 editField.setCurrentIndex(indexOfOldUnit);

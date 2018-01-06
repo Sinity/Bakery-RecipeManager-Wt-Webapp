@@ -195,7 +195,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                 *ingredientKeys = populateComboBox<Ingredient>(*db, editField, [](const Ingredient& ingredient) { return ingredient.name; },
                     [this](const Wt::Dbo::ptr<Ingredient>& elem) { return elem->ownerID == db->users->find(db->login.user())->user()->firmID; });
 
-                auto oldContent = (Wt::WText*)ingredientList->elementAt(row, 0)->widget(0);
+                auto oldContent = (Wt::WText*)ingredientList->elementAt(row, findColumn(*ingredientList, colIngredient))->widget(0);
                 auto oldIngredientName = oldContent->text();
                 auto indexOfOldIngredient = editField.findText(oldIngredientName);
                 editField.setCurrentIndex(indexOfOldIngredient);
@@ -277,7 +277,7 @@ class RecipeDetailsWidget : public Wt::WContainerWidget {
                         return Unit::sameBranch(*db, potentialUnit.id(), ingredientRecord->unitID);
                     });
 
-                auto oldContent = (Wt::WText*)ingredientList->elementAt(row, 2)->widget(0);
+                auto oldContent = (Wt::WText*)ingredientList->elementAt(row, findColumn(*ingredientList, colUnit))->widget(0);
                 auto oldUnitName = oldContent->text();
                 auto indexOfOldUnit = editField.findText(oldUnitName);
                 editField.setCurrentIndex(indexOfOldUnit);
